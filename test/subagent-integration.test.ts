@@ -510,7 +510,11 @@ describe("Standalone operation (no subagents extension)", () => {
       agentType: "general-purpose",
     });
     const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
-    expect(result.content[0].text).toContain("Subagent execution is currently unavailable");
+    const text = result.content[0].text;
+    expect(text).toContain("Subagent execution is currently unavailable");
+    // Offers the plain Agent tool as a fallback, with the tracking caveat.
+    expect(text).toContain("Agent-tool spawns");
+    expect(text).toContain("won't track them");
   });
 
   it("subagents lifecycle events are silently ignored without mapped agents", () => {

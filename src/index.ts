@@ -920,8 +920,9 @@ Set up task dependencies:
     async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       if (!subagentsAvailable) {
         return textResult(
-          "Subagent execution is currently unavailable. " +
-          "Ensure the @tintinweb/pi-subagents extension is loaded and try again."
+          "Subagent execution is currently unavailable (@tintinweb/pi-subagents not loaded " +
+          "or version mismatch). You can run these as plain Agent-tool spawns, but pi-tasks " +
+          "won't track them — status stays pending, cascade won't fire, TaskOutput stays empty."
         );
       }
 
