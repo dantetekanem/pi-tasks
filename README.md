@@ -1,10 +1,12 @@
-# @tintinweb/pi-tasks
+# pi-tasks — Leo's customized fork
 
-A [pi](https://pi.dev) extension that brings **Claude Code-style task tracking and coordination** to pi. Track multi-step work with structured tasks, dependency management, and a persistent visual widget.
+A [pi](https://pi.dev) extension that brings **Claude Code-style task tracking and coordination** to pi. This fork adds a strict completion contract: unfinished work cannot be skipped, agents receive the full task context, interrupted work remains open, newly discovered work is captured before progression, and a fully completed list is cleaned up.
 
-> **Status:** Early release.
+Customized repository: [dantetekanem/pi-tasks](https://github.com/dantetekanem/pi-tasks)
 
-<img width="600" alt="pi-tasks screenshot" src="https://github.com/tintinweb/pi-tasks/raw/master/media/screenshot.png" />
+> **Status:** Early release, customized from `@tintinweb/pi-tasks`.
+
+<img width="600" alt="pi-tasks screenshot" src="https://github.com/dantetekanem/pi-tasks/raw/main/media/screenshot.png" />
 
 https://github.com/user-attachments/assets/1d0ee87a-e0a5-4bfa-a9b9-2f9144cb905b
 
@@ -15,12 +17,17 @@ https://github.com/user-attachments/assets/1d0ee87a-e0a5-4bfa-a9b9-2f9144cb905b
 - **7 LLM-callable tools** — `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`, `TaskOutput`, `TaskStop`, `TaskExecute` — matching Claude Code's exact tool specs and descriptions
 - **Persistent widget** — live task list above the editor with `✔`/`◼`/`◻` status icons, task numbers (`#1`, `#2`, …), strikethrough for completed tasks, star spinner (`✳✽`) for active tasks with elapsed time and token counts
 - **System-reminder injection** — periodic `<system-reminder>` nudges injected into the upcoming LLM request (via the `context` hook, transient and never persisted) when task tools haven't been used recently (matches Claude Code's behavior exactly)
-- **Prompt guidelines** — workflow contract encoded in tool descriptions, nudging the LLM at the point of tool use
+- **Strict completion contract** — the active list is treated as a spec: work proceeds in dependency/task-ID order, unfinished earlier tasks cannot be bypassed, and only an explicit `TaskExecute` batch permits parallel progression
+- **Full agent context** — `TaskExecute` sends the task's description, acceptance metadata, status, ownership, dependency edges, timestamps, and complete prerequisite task records to the subagent
+- **No false completion** — stopped subagents and background work return to `pending` with their partial result/error preserved instead of being marked complete
+- **Discovered-work capture** — prompt guidelines require newly discovered required work to be added or connected with dependencies before moving ahead
+- **Whole-list cleanup** — once every task is completed and verified, the contract requires completed records to be removed so `TaskList` returns `No tasks found`
 - **Dependency management** — bidirectional `blocks`/`blockedBy` relationships with warnings for cycles, self-deps, and dangling references
 - **Shared task lists** — multiple pi sessions can share a file-backed task list for agent team coordination
 - **File locking** — concurrent access is safe when multiple sessions share a task list
 - **Background process tracking** — track spawned processes with output buffering, blocking wait, and graceful stop
 - **Subagent integration** — tasks with `agentType` can be executed as subagents via `TaskExecute` (requires [@tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)). Auto-cascade mode flows through the task DAG automatically when enabled.
+- **Manual draft handoff** — `/add-task <task>` inserts a raw `[draft]` task and immediately sends it to the agent to improve before execution.
 
 ## Install
 
@@ -55,7 +62,7 @@ The extension renders a persistent widget above the editor:
 
 ### Widget display settings
 
-How tasks are sorted and how many are shown can be configured via `/tasks` → Settings (saved to `.pi/tasks-config.json`). All defaults preserve the original behaviour.
+How tasks are sorted and how many are shown can be configured via `/tasks` → Settings (saved to `~/.pi/tasks/tasks-config.json`). All defaults preserve the original behaviour.
 
 | Setting | Values | Default | Behaviour |
 |---------|--------|---------|-----------|
@@ -170,18 +177,43 @@ Execute one or more tasks as background subagents. Requires [@tintinweb/pi-subag
 | `model` | string | Model override (e.g., `"sonnet"`, `"haiku"`) |
 | `max_turns` | number | Max turns per agent |
 
-Tasks must be `pending`, have `agentType` set, and all `blockedBy` dependencies `completed`. Each task spawns as an independent background subagent.
+Tasks must be `pending`, have `agentType` set, and all `blockedBy` dependencies `completed`. A later task is rejected while an earlier task remains unfinished. Passing multiple task IDs in the same `TaskExecute` call is the explicit opt-in for independent parallel work.
 
-With **auto-cascade** enabled (via `/tasks` → Settings), completed tasks automatically trigger execution of their unblocked dependents — flowing through the DAG like a build system. Each cascaded agent receives its prerequisites' stored results in the prompt, so it can build directly on what came before without re-fetching.
+Each spawned agent receives a structured **Complete task context** section containing the full task record and full prerequisite records, plus a prominent prerequisite-result summary and the strict completion contract. This means task descriptions and metadata are agent context, not merely widget text.
 
-## Task Lifecycle
+With **auto-cascade** enabled (via `/tasks` → Settings), completed tasks automatically trigger execution of their unblocked dependents — flowing through the task DAG without skipping unresolved work.
+
+## Slash commands
+
+### `/add-task <task>`
+
+Insert a raw next task without an interactive prompt or duplicate filtering. The task subject is stored as `[draft] <task>`, and Pi immediately sends a follow-up user message telling the agent to:
+
+1. read the new task with `TaskGet`,
+2. improve the draft subject/description with `TaskUpdate`,
+3. remove the `[draft]` prefix as part of that improvement,
+4. mark the task `in_progress`, execute it, and only then mark it `completed`.
+
+If the agent is already busy, the message is queued as a follow-up.
+
+## Task Lifecycle and completion contract
 
 ```
-pending → in_progress → completed
-                      → deleted (permanently removed)
+pending → in_progress → completed → deleted (after the whole list is verified)
+             ↓
+      stopped/failed → pending
 ```
 
-Tasks are created as `pending`. Mark `in_progress` before starting work, `completed` when done. `deleted` removes entirely — IDs never reset.
+The active task list is a completion contract:
+
+1. Work in dependency and task-ID order; do not start a later task while an earlier task is unfinished.
+2. An explicit multi-ID `TaskExecute` call is the only opt-in for parallel task progression.
+3. Do not abandon the current task to move ahead. Finish it with evidence, or leave it open and continue it.
+4. Add newly discovered required work before moving on, placing it after existing work or connecting it with dependencies.
+5. Mark work `completed` only when its acceptance criteria and verification are satisfied. Stopping work never counts as completion.
+6. After every task is completed and verified, delete the completed records so the list is empty.
+
+Task IDs never reset.
 
 ## Dependency Management
 
@@ -198,8 +230,8 @@ Task storage is controlled by the `taskScope` setting (`/tasks` → Settings →
 | Mode | File | Behaviour |
 |------|------|-----------|
 | `memory` | *(none)* | In-memory only — tasks lost when session ends |
-| `session` **(default)** | `<cwd>/.pi/tasks/tasks-<sessionId>.json` | Per-session file — isolated between sessions, survives resume |
-| `project` | `<cwd>/.pi/tasks/tasks.json` | Shared across all sessions in the project |
+| `session` **(default)** | `~/.pi/tasks/sessions/<sessionId>/tasks.json` | Per-Pi-session folder — isolated between sessions, survives resume |
+| `project` | `~/.pi/tasks/projects/<cwd-derived-name>.json` | Shared across all sessions in the project without writing to the project directory |
 
 On new session start, if all persisted tasks are completed they are auto-cleared for a clean slate. On session resume, all tasks (including completed) are shown so the user can review progress. Empty session files are automatically deleted when all tasks are cleared.
 
@@ -215,7 +247,7 @@ The `autoClearCompleted` setting controls automatic cleanup of completed tasks:
 
 Both auto-clear modes use a turn-based delay for non-jarring UX — tasks linger briefly so you see the completion before they disappear.
 
-Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `maxVisible` / `showAll` / `hiddenAt`) are saved to `<cwd>/.pi/tasks-config.json`.
+Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget display settings](#widget-display-settings) `sortOrder` / `maxVisible` / `showAll` / `hiddenAt`) are saved to `~/.pi/tasks/tasks-config.json`.
 
 ### Override via environment variables
 
@@ -223,8 +255,8 @@ Settings (`taskScope`, `autoCascade`, `autoClearCompleted`, plus the [widget dis
 |----------|-------|-----------|
 | `PI_TASKS` | `off` | In-memory only (CI/automation) |
 | `PI_TASKS` | `sprint-1` | Named shared list at `~/.pi/tasks/sprint-1.json` |
-| `PI_TASKS` | `/abs/path/tasks.json` | Explicit absolute file path |
-| `PI_TASKS` | `./tasks.json` | Relative path resolved from cwd |
+| `PI_TASKS` | `/abs/path/tasks.json` | Explicit absolute file path, except paths inside `<cwd>/.pi` are redirected to `~/.pi/tasks/env/` |
+| `PI_TASKS` | `./tasks.json` | Relative path stored under `~/.pi/tasks/env/` instead of the project directory |
 | *(unset)* | | Uses `taskScope` setting (default: `session`) |
 | `PI_TASKS_DEBUG` | `1` | Trace RPC communication (request/reply/timeout) and spawn errors to stderr |
 
@@ -317,7 +349,7 @@ src/
 ├── types.ts            # Task, TaskStatus, BackgroundProcess types
 ├── task-store.ts       # File-backed store with CRUD, dependencies, locking
 ├── auto-clear.ts       # Turn-based auto-clearing of completed tasks (AutoClearManager)
-├── tasks-config.ts     # Config persistence (taskScope, autoCascade, autoClearCompleted) → .pi/tasks-config.json
+├── tasks-config.ts     # Config persistence (taskScope, autoCascade, autoClearCompleted) → ~/.pi/tasks/tasks-config.json
 ├── process-tracker.ts  # Background process output buffering and stop
 └── ui/
     ├── task-widget.ts  # Persistent widget with status icons and spinner

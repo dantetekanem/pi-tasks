@@ -15,7 +15,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { join, resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { AutoClearManager } from "./auto-clear.js";
@@ -30,6 +31,7 @@ import {
 } from "./reminder-cadence.js";
 import { TaskStore } from "./task-store.js";
 import { loadTasksConfig } from "./tasks-config.js";
+import type { Task } from "./types.js";
 import { openSettingsMenu } from "./ui/settings-menu.js";
 import { TaskWidget, type UICtx } from "./ui/task-widget.js";
 
@@ -46,6 +48,44 @@ function textResult(msg: string) {
   return { content: [{ type: "text" as const, text: msg }], details: undefined as any };
 }
 
+const DRAFT_TASK_PREFIX = "[draft]";
+
+function draftTaskSubject(rawTask: string): string {
+  return rawTask.startsWith(DRAFT_TASK_PREFIX) ? rawTask : `${DRAFT_TASK_PREFIX} ${rawTask}`;
+}
+
+function draftTaskDescription(rawTask: string): string {
+  return [
+    "Manual draft task inserted with /add-task.",
+    "",
+    "Original draft:",
+    rawTask,
+    "",
+    "Before doing the work, improve this draft into a clear task with concrete acceptance criteria. Update the task subject/description and remove the [draft] prefix, then execute it.",
+  ].join("\n");
+}
+
+function taskRootDir(): string {
+  const override = process.env.PI_TASKS_DIR;
+  if (override && isAbsolute(override)) return override;
+  return join(homedir(), ".pi", "tasks");
+}
+
+function draftTaskKickoffPrompt(taskId: string, rawTask: string): string {
+  return [
+    `Work on task #${taskId} next.`,
+    "",
+    "This task was manually inserted as a draft:",
+    rawTask,
+    "",
+    "Before doing the implementation:",
+    `1. Use TaskGet to read task #${taskId}.`,
+    "2. Improve the task by using TaskUpdate to replace the [draft] subject and draft description with a clearer task and acceptance criteria.",
+    `3. Mark task #${taskId} in_progress, then complete the work.`,
+    `4. Mark task #${taskId} completed only when the work is fully done.`,
+  ].join("\n");
+}
+
 /** Task tool names — used to detect task tool usage for reminder suppression. */
 const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskOutput", "TaskStop", "TaskExecute"]);
 
@@ -55,8 +95,11 @@ const REMINDER_INTERVAL = 4;
 /** How many turns completed tasks linger before auto-clearing. */
 const AUTO_CLEAR_DELAY = 4;
 
+const TASK_COMPLETION_CONTRACT = `The active task list is a completion contract. Work in dependency and task-ID order. Do not start a later task while an earlier task is unfinished unless both were explicitly launched together as parallel work. Do not leave the current task to move ahead: either finish it completely with evidence, or keep it in_progress and continue it. When required work is discovered, create or update the task before moving on and place it in the correct dependency order; do not hide it in prose. Mark a task completed only after its full acceptance criteria and verification are satisfied. After every task is completed and verified, delete the completed task records so TaskList returns No tasks found.`;
+
 const SYSTEM_REMINDER = `<system-reminder>
-The task tools haven't been used recently. If you're working on tasks that would benefit from tracking progress, consider using TaskCreate to add new tasks and TaskUpdate to update task status (set to in_progress when starting, completed when done). Also consider cleaning up the task list if it has become stale. Only use these if relevant to the current work. This is just a gentle reminder - ignore if not applicable. Make sure that you NEVER mention this reminder to the user
+There are unfinished tracked tasks. ${TASK_COMPLETION_CONTRACT}
+Make sure that you NEVER mention this reminder to the user.
 </system-reminder>`;
 
 export default function (pi: ExtensionAPI) {
@@ -64,19 +107,32 @@ export default function (pi: ExtensionAPI) {
   const cfg = loadTasksConfig();
   const piTasks = process.env.PI_TASKS;
   const taskScope = cfg.taskScope ?? "session";
+  const globalTasksDir = taskRootDir();
 
-  /** Resolve the task store path from env/config (without session ID). */
+  function safeTaskPathSegment(value: string): string {
+    return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^[._-]+|[._-]+$/g, "") || "default";
+  }
+
+  function isInsideLocalPi(value: string): boolean {
+    const localPiDir = resolve(process.cwd(), ".pi");
+    const candidate = resolve(value);
+    return candidate === localPiDir || candidate.startsWith(`${localPiDir}/`);
+  }
+
+  /** Resolve the task store path from env/config without ever writing into cwd/.pi. */
   function resolveStorePath(sessionId?: string): string | undefined {
     if (piTasks === "off") return undefined;
-    if (piTasks?.startsWith("/")) return piTasks;
-    if (piTasks?.startsWith(".")) return resolve(piTasks);
+    if (piTasks && isAbsolute(piTasks)) {
+      return isInsideLocalPi(piTasks) ? join(globalTasksDir, "env", `${safeTaskPathSegment(piTasks)}.json`) : piTasks;
+    }
+    if (piTasks?.startsWith(".")) return join(globalTasksDir, "env", `${safeTaskPathSegment(piTasks)}.json`);
     if (piTasks) return piTasks;
     if (taskScope === "memory") return undefined;
     if (taskScope === "session" && sessionId) {
-      return join(process.cwd(), ".pi", "tasks", `tasks-${sessionId}.json`);
+      return join(globalTasksDir, "sessions", safeTaskPathSegment(sessionId), "tasks.json");
     }
     if (taskScope === "session") return undefined; // no session ID yet, start in-memory
-    return join(process.cwd(), ".pi", "tasks", "tasks.json");
+    return join(globalTasksDir, "projects", `${safeTaskPathSegment(process.cwd())}.json`);
   }
 
   // For project scope (or env override), create store immediately.
@@ -167,34 +223,67 @@ export default function (pi: ExtensionAPI) {
   checkSubagentsVersion();
   pi.events.on("subagents:ready", () => checkSubagentsVersion());
 
-  /** Build a prompt for a task being executed by a subagent.
-   *  Injects completed dependency results so cascaded agents have context from prerequisites.
-   */
-  function buildTaskPrompt(
-    task: { id: string; subject: string; description: string; blockedBy?: string[] },
-    additionalContext?: string,
-  ): string {
-    let prompt = `You are executing task #${task.id}: "${task.subject}"\n\n${task.description}`;
+  /** Return lower-ID work that must finish before a task can advance. */
+  function unfinishedEarlierTasks(taskId: string, allowedParallelIds = new Set<string>()): Task[] {
+    const currentId = Number(taskId);
+    return store.list().filter(candidate =>
+      Number(candidate.id) < currentId &&
+      candidate.status !== "completed" &&
+      !allowedParallelIds.has(candidate.id)
+    );
+  }
 
-    // Inject completed dependency results so cascaded agents have full context
-    if (task.blockedBy && task.blockedBy.length > 0) {
-      const depResults: string[] = [];
-      for (const depId of task.blockedBy) {
-        const dep = store.get(depId);
-        if (dep?.metadata?.result) {
-          const result = dep.metadata.result.length > 4000
-            ? dep.metadata.result.slice(0, 4000) + "\n\n[... truncated — use TaskGet for full output]"
-            : dep.metadata.result;
-          depResults.push(`### Task #${depId}: ${dep.subject}\n${result}`);
-        }
-      }
-      if (depResults.length > 0) {
-        prompt += `\n\n## Prerequisite task results\n\n${depResults.join("\n\n")}`;
+  /** Build a prompt for a task being executed by a subagent.
+   *  Injects the complete task record and dependency context, not only result snippets.
+   */
+  function buildTaskPrompt(task: Task, additionalContext?: string): string {
+    const dependencies = task.blockedBy
+      .map(depId => store.get(depId))
+      .filter((dependency): dependency is Task => dependency !== undefined);
+    const context = {
+      task: {
+        id: task.id,
+        subject: task.subject,
+        description: task.description,
+        status: task.status,
+        activeForm: task.activeForm,
+        owner: task.owner,
+        metadata: task.metadata,
+        blocks: task.blocks,
+        blockedBy: task.blockedBy,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+      },
+      dependencies,
+    };
+
+    let prompt = [
+      `You are executing task #${task.id}: "${task.subject}"`,
+      "",
+      task.description,
+      "",
+      "## Complete task context",
+      "```json",
+      JSON.stringify(context, null, 2),
+      "```",
+    ].join("\n");
+
+    // Keep prerequisite results prominent; long results remain available in the context metadata.
+    const depResults: string[] = [];
+    for (const dep of dependencies) {
+      if (typeof dep.metadata?.result === "string") {
+        const result = dep.metadata.result.length > 4000
+          ? `${dep.metadata.result.slice(0, 4000)}\n\n[... truncated in this summary — full value is in the task context above]`
+          : dep.metadata.result;
+        depResults.push(`### Task #${dep.id}: ${dep.subject}\n${result}`);
       }
     }
+    if (depResults.length > 0) {
+      prompt += `\n\n## Prerequisite task results\n\n${depResults.join("\n\n")}`;
+    }
 
-    if (additionalContext) prompt += `\n\n${additionalContext}`;
-    prompt += `\n\nComplete this task fully. Do not attempt to manage tasks yourself.`;
+    if (additionalContext) prompt += `\n\n## Additional execution context\n\n${additionalContext}`;
+    prompt += `\n\n## Completion contract\n\n${TASK_COMPLETION_CONTRACT}\n\nComplete only this assigned task fully. If required follow-up work is discovered, include it explicitly in your result so the parent agent can add it before advancing. Do not claim success for partial, stopped, failing, or unverified work. Do not attempt to manage task records yourself.`;
     return prompt;
   }
 
@@ -245,8 +334,7 @@ export default function (pi: ExtensionAPI) {
     widget.update();
   });
 
-  // Failure → store error, revert to pending, don't cascade (branch stops)
-  // Intentional stop (status === "stopped") → mark completed, preserve partial result
+  // Failure or intentional stop → preserve output and revert to pending; incomplete work is never completed.
   pi.events.on("subagents:failed", (data) => {
     const { id, error, result, status } = data as { id: string; error?: string; result?: string; status: string };
     const taskId = agentTaskMap.get(id);
@@ -256,14 +344,14 @@ export default function (pi: ExtensionAPI) {
     if (!task) return;
 
     if (status === "stopped") {
-      // Intentional stop — mark completed, preserve partial result
-      store.update(task.id, { status: "completed", metadata: { ...task.metadata, result: result || task.metadata?.result } });
-      autoClear.trackCompletion(task.id, cadence.currentTurn);
+      store.update(task.id, {
+        status: "pending",
+        metadata: { ...task.metadata, result: result || task.metadata?.result, lastError: "stopped before completion" },
+      });
     } else {
-      // Actual error — revert to pending
       store.update(task.id, { status: "pending", metadata: { ...task.metadata, lastError: error || status } });
-      autoClear.resetBatchCountdown();
     }
+    autoClear.resetBatchCountdown();
     widget.setActiveTask(task.id, false);
     widget.update();
   });
@@ -279,10 +367,21 @@ export default function (pi: ExtensionAPI) {
     if (taskScope === "session" && !piTasks) {
       const sessionId = ctx.sessionManager.getSessionId();
       const path = resolveStorePath(sessionId);
+      if (!path) return;
       store = new TaskStore(path);
       widget.setStore(store);
     }
     storeUpgraded = true;
+  }
+
+  function prepareCommandStore(ctx: ExtensionCommandContext): boolean {
+    widget.setUICtx(ctx.ui as UICtx);
+    upgradeStoreIfNeeded(ctx);
+    if (taskScope === "session" && !piTasks && !storeUpgraded) {
+      ctx.ui.notify("Unable to identify the current Pi session ID; task store not ready.", "error");
+      return false;
+    }
+    return true;
   }
 
   /** Restore widget on session start/resume if there's unfinished work.
@@ -390,23 +489,22 @@ export default function (pi: ExtensionAPI) {
     }
   });
 
-  // session_switch fires on /new (reason: "new") and /resume (reason: "resume").
-  // On /new: reset all session-scoped state so the store switches to the new session file.
-  // On resume: reload persisted tasks from the existing session file.
-  pi.on("session_switch" as any, async (event: any, ctx: ExtensionContext) => {
+  // Rebind to the active Pi session on startup, /new, /resume, /fork, and /reload.
+  // Session-scoped task state must follow Pi's session ID, not the project cwd.
+  pi.on("session_start", async (event, ctx) => {
     latestCtx = ctx;
     widget.setUICtx(ctx.ui as UICtx);
 
-    const isResume = event?.reason === "resume";
+    const isResume = event.reason === "resume";
 
-    // Reset session-scoped state for both /new and /resume
+    // Reset session-scoped state so the store switches to the active session folder.
     storeUpgraded = false;
     persistedTasksShown = false;
     resetCadenceState(cadence);
     autoClear.reset();
 
-    // Memory mode has no file-backed store to switch — clear explicitly on /new
-    if (!isResume && taskScope === "memory") {
+    // Memory mode has no file-backed store to switch — clear explicitly on /new.
+    if (event.reason === "new" && taskScope === "memory") {
       store.clearAll();
     }
 
@@ -471,9 +569,10 @@ All tasks are created with status \`pending\`.
 - Check TaskList first to avoid creating duplicate tasks
 - Include \`agentType\` (e.g., "general-purpose", "Explore") to mark tasks for subagent execution via TaskExecute`,
     promptGuidelines: [
-      "When working on complex multi-step tasks, use TaskCreate to track progress and TaskUpdate to update status.",
-      "Mark tasks as in_progress before starting work and completed when done.",
-      "Use TaskList to check for available work after completing a task.",
+      TASK_COMPLETION_CONTRACT,
+      "Capture every new user requirement or required follow-up as a task before moving on; append it after existing work or connect it with dependencies instead of silently replacing unfinished tasks.",
+      "Keep one top-level task in_progress unless TaskExecute explicitly launches a parallel batch.",
+      "Use TaskList after each material completion, continue the earliest unfinished task, and clean every completed record only after the whole list is verified complete.",
     ],
     parameters: Type.Object({
       subject: Type.String({ description: "A brief title for the task" }),
@@ -733,6 +832,14 @@ Set up task dependencies:
 
     execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
       const { taskId, ...fields } = params;
+      if (fields.status === "in_progress") {
+        const earlier = unfinishedEarlierTasks(taskId);
+        if (earlier.length > 0) {
+          return Promise.resolve(textResult(
+            `Task #${taskId} cannot start while earlier tasks remain unfinished: ${earlier.map(task => `#${task.id} [${task.status}]`).join(", ")}. Finish them first or launch an explicit parallel batch with TaskExecute.`
+          ));
+        }
+      }
       const { task, changedFields, warnings } = store.update(taskId, fields);
 
       if (changedFields.length === 0 && !task) {
@@ -868,21 +975,24 @@ Set up task dependencies:
         }
         const task = store.get(resolvedId);
         if (task?.metadata?.agentId && task.status === "in_progress") {
-          store.update(taskId, { status: "completed" });
-          autoClear.trackCompletion(taskId, cadence.currentTurn);
+          store.update(resolvedId, {
+            status: "pending",
+            metadata: { ...task.metadata, lastError: "stopped before completion" },
+          });
+          autoClear.resetBatchCountdown();
           await stopSubagent(task.metadata.agentId);
-          widget.setActiveTask(taskId, false);
+          widget.setActiveTask(resolvedId, false);
           widget.update();
-          return textResult(`Task #${taskId} stopped successfully`);
+          return textResult(`Task #${resolvedId} stopped successfully and returned to pending`);
         }
         throw new Error(`No running background process for task ${taskId}`);
       }
 
-      store.update(taskId, { status: "completed" });
-      autoClear.trackCompletion(taskId, cadence.currentTurn);
+      store.update(taskId, { status: "pending", metadata: { lastError: "stopped before completion" } });
+      autoClear.resetBatchCountdown();
       widget.setActiveTask(taskId, false);
       widget.update();
-      return textResult(`Task #${taskId} stopped successfully`);
+      return textResult(`Task #${taskId} stopped successfully and returned to pending`);
     },
   });
 
@@ -928,6 +1038,7 @@ Set up task dependencies:
 
       const results: string[] = [];
       const launched: string[] = [];
+      const explicitParallelIds = new Set(params.task_ids);
 
       for (const taskId of params.task_ids) {
         const task = store.get(taskId);
@@ -944,13 +1055,16 @@ Set up task dependencies:
           continue;
         }
 
-        // Check all blockers are completed
-        const openBlockers = task.blockedBy.filter(bid => {
-          const blocker = store.get(bid);
-          return !blocker || blocker.status !== "completed";
-        });
+        // Check declared dependencies before applying the global task-order contract.
+        const openBlockers = task.blockedBy.filter(bid => store.get(bid)?.status !== "completed");
         if (openBlockers.length > 0) {
           results.push(`#${taskId}: blocked by ${openBlockers.map(id => "#" + id).join(", ")}`);
+          continue;
+        }
+
+        const earlier = unfinishedEarlierTasks(taskId, explicitParallelIds);
+        if (earlier.length > 0) {
+          results.push(`#${taskId}: earlier tasks unfinished — ${earlier.map(candidate => `#${candidate.id} [${candidate.status}]`).join(", ")}`);
           continue;
         }
 
@@ -999,12 +1113,45 @@ Set up task dependencies:
   });
 
   // ──────────────────────────────────────────────────
+  // /add-task command
+  // ──────────────────────────────────────────────────
+
+  pi.registerCommand("add-task", {
+    description: "Add a raw draft task and send it to the agent to refine and execute",
+    handler: async (args: string, ctx: ExtensionCommandContext) => {
+      if (!prepareCommandStore(ctx)) return;
+      const rawTask = args.trim();
+      if (!rawTask) {
+        ctx.ui.notify("Usage: /add-task <task>", "error");
+        return;
+      }
+
+      autoClear.resetBatchCountdown();
+      const task = store.create(draftTaskSubject(rawTask), draftTaskDescription(rawTask), undefined, {
+        draft: true,
+        source: "/add-task",
+        originalDraft: rawTask,
+      });
+      widget.update();
+      ctx.ui.notify(`Added draft task #${task.id}: ${task.subject}`, "info");
+
+      const prompt = draftTaskKickoffPrompt(task.id, rawTask);
+      if (ctx.isIdle()) {
+        pi.sendUserMessage(prompt);
+      } else {
+        pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+      }
+    },
+  });
+
+  // ──────────────────────────────────────────────────
   // /tasks command
   // ──────────────────────────────────────────────────
 
   pi.registerCommand("tasks", {
     description: "Manage tasks — view, create, clear completed",
     handler: async (_args: string, ctx: ExtensionCommandContext) => {
+      if (!prepareCommandStore(ctx)) return;
       const ui = ctx.ui;
 
       const mainMenu = async (): Promise<void> => {
