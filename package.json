@@ -1,16 +1,12 @@
 {
-  "name": "@tintinweb/pi-tasks",
+  "name": "@dantetekanem/pi-tasks",
   "version": "0.7.1",
-  "description": "A pi extension that brings Claude Code-style task tracking and coordination to pi.",
-  "author": "tintinweb",
+  "description": "Strict task tracking and coordination for pi.",
+  "author": "Leonardo Pereira",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tintinweb/pi-tasks.git"
-  },
-  "homepage": "https://github.com/tintinweb/pi-tasks#readme",
-  "bugs": {
-    "url": "https://github.com/tintinweb/pi-tasks/issues"
+    "url": "https://github.com/dantetekanem/pi-tasks.git"
   },
   "keywords": [
     "pi-package",
@@ -18,7 +14,6 @@
     "pi-extension",
     "task",
     "tasks",
-    "todo",
     "coordination"
   ],
   "peerDependencies": {
@@ -30,7 +25,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -46,8 +41,6 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ],
-    "video": "https://github.com/tintinweb/pi-tasks/raw/master/media/demo.mp4",
-    "image": "https://github.com/tintinweb/pi-tasks/raw/master/media/screenshot.png"
+    ]
   }
 }

@@ -1,5 +1,5 @@
 /**
- * @tintinweb/pi-tasks — A pi extension providing Claude Code-style task tracking and coordination.
+ * pi-tasks — A pi extension providing strict task tracking and coordination.
  *
  * Tools:
  *   TaskCreate   — Create a structured task
@@ -208,7 +208,7 @@ export default function (pi: ExtensionAPI) {
           "@tintinweb/pi-subagents is outdated — please update for task execution support.";
       } else if (remoteVersion > PROTOCOL_VERSION) {
         pendingWarning =
-          `@tintinweb/pi-tasks is outdated (protocol v${PROTOCOL_VERSION}, ` +
+          `pi-tasks is outdated (protocol v${PROTOCOL_VERSION}, ` +
           `pi-subagents has v${remoteVersion}) — please update for task execution support.`;
       } else if (remoteVersion < PROTOCOL_VERSION) {
         pendingWarning =
