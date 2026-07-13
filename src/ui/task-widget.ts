@@ -47,6 +47,7 @@ export type UICtx = {
 const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
 
 const DEFAULT_MAX_VISIBLE_TASKS = 10;
+const MAX_VISIBLE_COMPLETED_TASKS = 3;
 
 /** Per-task runtime metrics (elapsed time, token usage). */
 export interface TaskMetrics {
@@ -159,7 +160,20 @@ export class TaskWidget {
     const showAll = this.config.showAll ?? false;
     const limit = this.config.maxVisible ?? DEFAULT_MAX_VISIBLE_TASKS;
     const hiddenAt = this.config.hiddenAt ?? "bottom";
-    const visible = showAll ? tasks : TRUNCATE_FNS[hiddenAt](tasks, limit);
+    const unfinished = tasks.filter(task => task.status !== "completed");
+    const visibleUnfinished = showAll ? unfinished : TRUNCATE_FNS[hiddenAt](unfinished, limit);
+    const visibleCompletedIds = new Set(
+      [...completed]
+        .sort((a, b) => Number(b.id) - Number(a.id))
+        .slice(0, MAX_VISIBLE_COMPLETED_TASKS)
+        .map(task => task.id),
+    );
+    const visibleUnfinishedIds = new Set(visibleUnfinished.map(task => task.id));
+    const visible = showAll
+      ? tasks
+      : tasks.filter(task =>
+        task.status === "completed" ? visibleCompletedIds.has(task.id) : visibleUnfinishedIds.has(task.id)
+      );
 
     const hiddenCount = tasks.length - visible.length;
     const overflowLine = hiddenCount > 0

@@ -185,6 +185,25 @@ describe("TaskWidget", () => {
     expect(lines[6]).toContain("10 more");
   });
 
+  it("caps completed tasks separately from the unfinished-task limit", () => {
+    widget = new TaskWidget(store, { maxVisible: 8 });
+    widget.setUICtx(ui.ctx);
+    for (let i = 1; i <= 7; i++) store.create(`Done ${i}`, "Desc");
+    for (let i = 1; i <= 8; i++) store.create(`Future ${i}`, "Desc");
+    for (let i = 1; i <= 7; i++) store.update(String(i), { status: "completed" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    // header + 3 newest completed + 8 unfinished + overflow
+    expect(lines).toHaveLength(13);
+    expect(lines[12]).toContain("4 more");
+    expect(lines.some(l => l.includes("Done 4"))).toBe(false);
+    expect(lines.some(l => l.includes("Done 5"))).toBe(true);
+    expect(lines.some(l => l.includes("Done 7"))).toBe(true);
+    expect(lines.some(l => l.includes("Future 1"))).toBe(true);
+    expect(lines.some(l => l.includes("Future 8"))).toBe(true);
+  });
+
   it("shows all tasks when limit exceeds task count", () => {
     widget = new TaskWidget(store, { maxVisible: 10 });
     widget.setUICtx(ui.ctx);
@@ -225,18 +244,18 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // header + overflow line + 5 visible = 7 lines
-    expect(lines).toHaveLength(7);
+    // header + overflow line + 3 completed + 4 unfinished = 9 lines
+    expect(lines).toHaveLength(9);
     // overflow at top (after header)
-    expect(lines[1]).toContain("3 more");
-    // all in_progress and pending visible
+    expect(lines[1]).toContain("1 more");
+    // all in_progress and pending visible without consuming completed-task slots
     expect(lines.some(l => l.includes("Working 1"))).toBe(true);
     expect(lines.some(l => l.includes("Todo 2"))).toBe(true);
-    // only newest completed (#4) visible
+    // newest three completed tasks are visible
+    expect(lines.some(l => l.includes("Done 2"))).toBe(true);
     expect(lines.some(l => l.includes("Done 4"))).toBe(true);
-    // oldest completed hidden
+    // oldest completed task is hidden
     expect(lines.some(l => l.includes("Done 1"))).toBe(false);
-    expect(lines.some(l => l.includes("Done 3"))).toBe(false);
   });
 
   it("truncates from bottom by default", () => {
