@@ -45,7 +45,7 @@ export async function openSettingsMenu(
         label: "Auto-execute with agents",
         description:
           "When ON: pending agent tasks start automatically once their dependencies complete. " +
-          "When OFF: use TaskExecute to launch them manually.",
+          "When OFF: use task_execute to launch them manually.",
         currentValue: (cfg.autoCascade ?? false) ? "on" : "off",
         values: ["on", "off"],
       },

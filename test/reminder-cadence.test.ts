@@ -11,13 +11,13 @@ import {
 } from "../src/reminder-cadence.js";
 
 const TASK_TOOL_NAMES = new Set([
-  "TaskCreate",
-  "TaskList",
-  "TaskGet",
-  "TaskUpdate",
-  "TaskOutput",
-  "TaskStop",
-  "TaskExecute",
+  "task_create",
+  "task_list",
+  "task_get",
+  "task_update",
+  "task_output",
+  "task_stop",
+  "task_execute",
 ]);
 
 const config: CadenceConfig = {
@@ -67,7 +67,7 @@ describe("reminder cadence (pure)", () => {
     evaluateToolResult(state, "read", true, config); // queues reminder
     expect(state.reminderDue).toBe(true);
 
-    const decision = evaluateToolResult(state, "TaskCreate", true, config);
+    const decision = evaluateToolResult(state, "task_create", true, config);
     expect(decision.markDue).toBe(false);
     expect(state.reminderDue).toBe(false);
     expect(state.reminderInjectedThisCycle).toBe(false);
@@ -93,7 +93,7 @@ describe("reminder cadence (pure)", () => {
     drainReminderForContext(state);
 
     // Use a task tool to reset.
-    evaluateToolResult(state, "TaskUpdate", true, config);
+    evaluateToolResult(state, "task_update", true, config);
     expect(state.reminderInjectedThisCycle).toBe(false);
 
     // Wait the interval again, expect a fresh reminder.

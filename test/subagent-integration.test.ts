@@ -1,5 +1,5 @@
 /**
- * Tests for task-subagent integration: TaskExecute tool, completion listener,
+ * Tests for task-subagent integration: task_execute tool, completion listener,
  * auto-cascade, and widget agent ID display.
  */
 
@@ -166,18 +166,18 @@ describe("session-scoped storage", () => {
       ...mockCtx(),
       sessionManager: { getSessionId: () => "session-a" },
     });
-    await mock.executeTool("TaskCreate", { subject: "A", description: "Task A" });
+    await mock.executeTool("task_create", { subject: "A", description: "Task A" });
 
     await mock.fireLifecycle("session_start", { reason: "new" }, {
       ...mockCtx(),
       sessionManager: { getSessionId: () => "session-b" },
     });
-    await mock.executeTool("TaskCreate", { subject: "B", description: "Task B" });
+    await mock.executeTool("task_create", { subject: "B", description: "Task B" });
 
     expect(fs.existsSync(path.join(tasksDir, "sessions", "session-a", "tasks.json"))).toBe(true);
     expect(fs.existsSync(path.join(tasksDir, "sessions", "session-b", "tasks.json"))).toBe(true);
 
-    const list = await mock.executeTool("TaskList", {});
+    const list = await mock.executeTool("task_list", {});
     expect(list.content[0].text).toContain("#1 [pending] B");
     expect(list.content[0].text).not.toContain("A");
   });
@@ -193,16 +193,16 @@ describe("/add-task", () => {
 
     await command.handler("ship the manual task", { ...mockCtx(), isIdle: () => true });
 
-    const list = await mock.executeTool("TaskList", {});
+    const list = await mock.executeTool("task_list", {});
     expect(list.content[0].text).toContain("#1 [pending] [draft] ship the manual task");
 
-    const task = await mock.executeTool("TaskGet", { taskId: "1" });
+    const task = await mock.executeTool("task_get", { taskId: "1" });
     expect(task.content[0].text).toContain("Manual draft task inserted with /add-task.");
     expect(task.content[0].text).toContain("Metadata: {\"draft\":true");
 
     expect(mock.pi.sendUserMessage).toHaveBeenCalledTimes(1);
     expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("Work on task #1 next."));
-    expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("Improve the task by using TaskUpdate"));
+    expect(mock.pi.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("Improve the task by using task_update"));
   });
 
   it("queues the draft task prompt as a follow-up when the agent is busy", async () => {
@@ -231,7 +231,7 @@ describe("/add-task", () => {
   });
 });
 
-describe("TaskExecute", () => {
+describe("task_execute", () => {
   let mock: ReturnType<typeof mockPi>;
   let rpc: ReturnType<typeof installSubagentsMock>;
 
@@ -247,7 +247,7 @@ describe("TaskExecute", () => {
   });
 
   it("is registered as a tool", () => {
-    expect(mock.tools.has("TaskExecute")).toBe(true);
+    expect(mock.tools.has("task_execute")).toBe(true);
   });
 
   it("returns error when subagent extension is not loaded", async () => {
@@ -255,103 +255,103 @@ describe("TaskExecute", () => {
     const freshMock = mockPi();
     initExtension(freshMock.pi as any);
 
-    await freshMock.executeTool("TaskCreate", {
+    await freshMock.executeTool("task_create", {
       subject: "Test task",
       description: "Do something",
       agentType: "general-purpose",
     });
 
-    const result = await freshMock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await freshMock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("Subagent execution is currently unavailable");
   });
 
   it("rejects non-existent tasks", async () => {
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["999"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["999"] });
     expect(result.content[0].text).toContain("#999: not found");
   });
 
   it("rejects tasks without agentType", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "No agent type",
       description: "Plain task",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("#1: no agentType set");
   });
 
   it("rejects non-pending tasks", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Already started",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "in_progress" });
+    await mock.executeTool("task_update", { taskId: "1", status: "in_progress" });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("#1: not pending");
   });
 
   it("rejects a later task while an earlier task is unfinished", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Earlier task",
       description: "Must finish first",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Later task",
       description: "Must not skip ahead",
       agentType: "general-purpose",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["2"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["2"] });
     expect(result.content[0].text).toContain("earlier tasks unfinished");
     expect(result.content[0].text).toContain("#1 [pending]");
     expect(rpc.spawned).toHaveLength(0);
   });
 
   it("allows an explicit parallel batch despite task ID order", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Parallel A",
       description: "First parallel lane",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Parallel B",
       description: "Second parallel lane",
       agentType: "general-purpose",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1", "2"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1", "2"] });
     expect(result.content[0].text).toContain("Launched 2 agent(s)");
     expect(rpc.spawned).toHaveLength(2);
   });
 
   it("rejects tasks with unresolved blockers", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Blocker",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Blocked",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["2"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["2"] });
     expect(result.content[0].text).toContain("#2: blocked by #1");
   });
 
   it("spawns agent for valid task and updates metadata", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Run tests",
       description: "Run the test suite",
       agentType: "general-purpose",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("Launched 1 agent");
     expect(result.content[0].text).toContain("#1 → agent agent-1");
 
@@ -363,7 +363,7 @@ describe("TaskExecute", () => {
   });
 
   it("passes full task context, additional context, and the completion contract", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Explore codebase",
       description: "Find all API endpoints and verify the route inventory",
       activeForm: "Exploring endpoints",
@@ -371,7 +371,7 @@ describe("TaskExecute", () => {
       metadata: { acceptance: "Every route has evidence", source: "user" },
     });
 
-    await mock.executeTool("TaskExecute", {
+    await mock.executeTool("task_execute", {
       task_ids: ["1"],
       additional_context: "Focus on REST endpoints only",
       max_turns: 10,
@@ -389,35 +389,35 @@ describe("TaskExecute", () => {
   });
 
   it("allows executing tasks whose blockers are all completed", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Blocker",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Dependent",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "1", status: "completed" });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["2"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["2"] });
     expect(result.content[0].text).toContain("Launched 1 agent");
   });
 
   it("handles mixed valid and invalid tasks in one call", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Valid",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "No agent type",
       description: "Desc",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1", "2", "999"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1", "2", "999"] });
     const text = result.content[0].text;
     expect(text).toContain("Launched 1 agent");
     expect(text).toContain("#2: no agentType set");
@@ -425,7 +425,7 @@ describe("TaskExecute", () => {
   });
 });
 
-describe("TaskExecute via ready broadcast", () => {
+describe("task_execute via ready broadcast", () => {
   it("detects subagents when ready fires after tasks init", async () => {
     // Init tasks WITHOUT the mock — subagents not available yet
     const mock = mockPi();
@@ -435,13 +435,13 @@ describe("TaskExecute via ready broadcast", () => {
     const rpc = installSubagentsMock(mock.pi);
 
     // Create a task and execute — should work because ready was received
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Late-loaded test",
       description: "Desc",
       agentType: "general-purpose",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("Launched 1 agent");
     expect(rpc.spawned).toHaveLength(1);
 
@@ -464,27 +464,27 @@ describe("Completion listener", () => {
   });
 
   it("marks task completed on subagents:completed event", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Agent task",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
 
     // Simulate agent completion
     mock.emitEvent("subagents:completed", { id: "agent-1" });
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("task_get", { taskId: "1" });
     expect(result.content[0].text).toContain("Status: completed");
   });
 
   it("returns intentionally stopped agent work to pending instead of completing it", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Interrupted task",
       description: "Must remain open",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
 
     mock.emitEvent("subagents:failed", {
       id: "agent-1",
@@ -492,29 +492,29 @@ describe("Completion listener", () => {
       status: "stopped",
     });
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("task_get", { taskId: "1" });
     expect(result.content[0].text).toContain("Status: pending");
     expect(result.content[0].text).toContain("Partial output");
     expect(result.content[0].text).toContain("stopped before completion");
   });
 
   it("reverts task to pending on subagents:failed event", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Failing task",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
 
     // Simulate agent failure
     mock.emitEvent("subagents:failed", { id: "agent-1", error: "Out of turns", status: "error" });
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("task_get", { taskId: "1" });
     expect(result.content[0].text).toContain("Status: pending");
   });
 
   it("ignores events for unknown agent IDs", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Unrelated",
       description: "Desc",
     });
@@ -523,7 +523,7 @@ describe("Completion listener", () => {
     mock.emitEvent("subagents:completed", { id: "unknown-agent" });
     mock.emitEvent("subagents:failed", { id: "unknown-agent", error: "boom", status: "error" });
 
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+    const result = await mock.executeTool("task_get", { taskId: "1" });
     expect(result.content[0].text).toContain("Status: pending");
   });
 });
@@ -544,20 +544,20 @@ describe("Auto-cascade", () => {
 
   it("does NOT cascade when auto-cascade is off (default)", async () => {
     // Create A → B chain
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task A",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task B",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
     // Execute A
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(rpc.spawned).toHaveLength(1);
 
     // Complete A
@@ -567,46 +567,46 @@ describe("Auto-cascade", () => {
     expect(rpc.spawned).toHaveLength(1);
 
     // B should still be pending
-    const result = await mock.executeTool("TaskGet", { taskId: "2" });
+    const result = await mock.executeTool("task_get", { taskId: "2" });
     expect(result.content[0].text).toContain("Status: pending");
   });
 
   it("does NOT cascade on failure (branch stops)", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task A",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task B",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
     mock.emitEvent("subagents:failed", { id: "agent-1", error: "crashed", status: "error" });
 
     // B should not start
     expect(rpc.spawned).toHaveLength(1);
-    const result = await mock.executeTool("TaskGet", { taskId: "2" });
+    const result = await mock.executeTool("task_get", { taskId: "2" });
     expect(result.content[0].text).toContain("Status: pending");
   });
 
   it("tasks without agentType are not cascaded even if unblocked", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Agent task",
       description: "Desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Manual task",
       description: "Desc",
       // No agentType — manual
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
     mock.emitEvent("subagents:completed", { id: "agent-1" });
 
     // Manual task should stay pending
@@ -625,93 +625,93 @@ describe("Standalone operation (no subagents extension)", () => {
   });
 
   it("all core task tools are registered", () => {
-    for (const name of ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TasksDone", "TaskExecute"]) {
+    for (const name of ["task_create", "task_list", "task_get", "task_update", "tasks_done", "task_execute"]) {
       expect(mock.tools.has(name)).toBe(true);
     }
   });
 
   it("publishes the strict completion and cleanup contract in prompt guidelines", () => {
-    const guidelines = mock.tools.get("TaskCreate").promptGuidelines.join("\n");
+    const guidelines = mock.tools.get("task_create").promptGuidelines.join("\n");
     expect(guidelines).toContain("active task list is a completion contract");
     expect(guidelines).toContain("Do not start a later task while an earlier task is unfinished");
     expect(guidelines).toContain("When required work is discovered");
-    expect(guidelines).toContain("TaskList returns No tasks found");
+    expect(guidelines).toContain("task_list returns No tasks found");
   });
 
-  it("TaskCreate works without subagents", async () => {
-    const result = await mock.executeTool("TaskCreate", {
+  it("task_create works without subagents", async () => {
+    const result = await mock.executeTool("task_create", {
       subject: "Write tests",
       description: "Add unit tests for the parser",
     });
     expect(result.content[0].text).toContain("Write tests");
   });
 
-  it("TaskList works without subagents", async () => {
-    await mock.executeTool("TaskCreate", { subject: "A", description: "desc" });
-    await mock.executeTool("TaskCreate", { subject: "B", description: "desc" });
-    const result = await mock.executeTool("TaskList", {});
+  it("task_list works without subagents", async () => {
+    await mock.executeTool("task_create", { subject: "A", description: "desc" });
+    await mock.executeTool("task_create", { subject: "B", description: "desc" });
+    const result = await mock.executeTool("task_list", {});
     expect(result.content[0].text).toContain("#1");
     expect(result.content[0].text).toContain("#2");
   });
 
-  it("TaskGet works without subagents", async () => {
-    await mock.executeTool("TaskCreate", { subject: "Read me", description: "details here" });
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+  it("task_get works without subagents", async () => {
+    await mock.executeTool("task_create", { subject: "Read me", description: "details here" });
+    const result = await mock.executeTool("task_get", { taskId: "1" });
     expect(result.content[0].text).toContain("Read me");
     expect(result.content[0].text).toContain("details here");
   });
 
-  it("TaskUpdate works without subagents", async () => {
-    await mock.executeTool("TaskCreate", { subject: "Update me", description: "desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "in_progress" });
-    const result = await mock.executeTool("TaskGet", { taskId: "1" });
+  it("task_update works without subagents", async () => {
+    await mock.executeTool("task_create", { subject: "Update me", description: "desc" });
+    await mock.executeTool("task_update", { taskId: "1", status: "in_progress" });
+    const result = await mock.executeTool("task_get", { taskId: "1" });
     expect(result.content[0].text).toContain("in_progress");
   });
 
-  it("TaskUpdate cannot move to a later task while earlier work is unfinished", async () => {
-    await mock.executeTool("TaskCreate", { subject: "First", description: "finish first" });
-    await mock.executeTool("TaskCreate", { subject: "Second", description: "do not skip" });
+  it("task_update cannot move to a later task while earlier work is unfinished", async () => {
+    await mock.executeTool("task_create", { subject: "First", description: "finish first" });
+    await mock.executeTool("task_create", { subject: "Second", description: "do not skip" });
 
-    const update = await mock.executeTool("TaskUpdate", { taskId: "2", status: "in_progress" });
+    const update = await mock.executeTool("task_update", { taskId: "2", status: "in_progress" });
     expect(update.content[0].text).toContain("cannot start while earlier tasks remain unfinished");
-    const task = await mock.executeTool("TaskGet", { taskId: "2" });
+    const task = await mock.executeTool("task_get", { taskId: "2" });
     expect(task.content[0].text).toContain("Status: pending");
   });
 
-  it("TasksDone clears a fully completed list in one call", async () => {
-    await mock.executeTool("TaskCreate", { subject: "First", description: "desc" });
-    await mock.executeTool("TaskCreate", { subject: "Second", description: "desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
-    await mock.executeTool("TaskUpdate", { taskId: "2", status: "completed" });
+  it("tasks_done clears a fully completed list in one call", async () => {
+    await mock.executeTool("task_create", { subject: "First", description: "desc" });
+    await mock.executeTool("task_create", { subject: "Second", description: "desc" });
+    await mock.executeTool("task_update", { taskId: "1", status: "completed" });
+    await mock.executeTool("task_update", { taskId: "2", status: "completed" });
 
-    const done = await mock.executeTool("TasksDone", {});
+    const done = await mock.executeTool("tasks_done", {});
     expect(done.content[0].text).toContain("Cleared 2 completed tasks");
 
-    const list = await mock.executeTool("TaskList", {});
+    const list = await mock.executeTool("task_list", {});
     expect(list.content[0].text).toBe("No tasks found");
   });
 
-  it("TasksDone refuses to clear unfinished tasks", async () => {
-    await mock.executeTool("TaskCreate", { subject: "Finished", description: "desc" });
-    await mock.executeTool("TaskCreate", { subject: "Still open", description: "desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+  it("tasks_done refuses to clear unfinished tasks", async () => {
+    await mock.executeTool("task_create", { subject: "Finished", description: "desc" });
+    await mock.executeTool("task_create", { subject: "Still open", description: "desc" });
+    await mock.executeTool("task_update", { taskId: "1", status: "completed" });
 
-    const done = await mock.executeTool("TasksDone", {});
+    const done = await mock.executeTool("tasks_done", {});
     expect(done.content[0].text).toContain("unfinished tasks remain");
     expect(done.content[0].text).toContain("#2 [pending]");
 
-    const list = await mock.executeTool("TaskList", {});
+    const list = await mock.executeTool("task_list", {});
     expect(list.content[0].text).toContain("#1 [completed]");
     expect(list.content[0].text).toContain("#2 [pending]");
   });
 
-  it("TaskExecute gracefully refuses without subagents", async () => {
-    await mock.executeTool("TaskCreate", {
+  it("task_execute gracefully refuses without subagents", async () => {
+    await mock.executeTool("task_create", {
       subject: "Agent task",
       description: "desc",
       agentType: "general-purpose",
     });
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     const text = result.content[0].text;
     expect(text).toContain("Subagent execution is currently unavailable");
     // Offers the plain Agent tool as a fallback, with the tracking caveat.
@@ -727,11 +727,11 @@ describe("Standalone operation (no subagents extension)", () => {
   });
 
   it("task dependencies work without subagents", async () => {
-    await mock.executeTool("TaskCreate", { subject: "First", description: "desc" });
-    await mock.executeTool("TaskCreate", { subject: "Second", description: "desc" });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_create", { subject: "First", description: "desc" });
+    await mock.executeTool("task_create", { subject: "Second", description: "desc" });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    const result = await mock.executeTool("TaskGet", { taskId: "2" });
+    const result = await mock.executeTool("task_get", { taskId: "2" });
     expect(result.content[0].text).toContain("Blocked by");
     expect(result.content[0].text).toContain("#1");
   });
@@ -762,23 +762,23 @@ describe("RPC protocol correctness", () => {
     const rpc = installSubagentsMock(mock.pi);
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Test",
       description: "desc",
       agentType: "general-purpose",
     });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(rpc.spawned).toHaveLength(1);
     mock.emitEvent("subagents:completed", { id: "agent-1", result: "done" });
 
     // Second spawn should get a fresh requestId (not conflict with first)
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Test 2",
       description: "desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["2"] });
+    await mock.executeTool("task_execute", { task_ids: ["2"] });
     expect(rpc.spawned).toHaveLength(2);
     expect(rpc.spawned[0].id).not.toBe(rpc.spawned[1].id);
 
@@ -791,7 +791,7 @@ describe("RPC protocol correctness", () => {
     installVersionedMock(mock.pi, 2);
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Timeout test",
       description: "desc",
       agentType: "general-purpose",
@@ -799,7 +799,7 @@ describe("RPC protocol correctness", () => {
 
     // spawnSubagent has a 30s timeout — we'll advance timers
     vi.useFakeTimers();
-    const execPromise = mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const execPromise = mock.executeTool("task_execute", { task_ids: ["1"] });
     await vi.advanceTimersByTimeAsync(31000);
 
     const result = await execPromise;
@@ -813,21 +813,21 @@ describe("RPC protocol correctness", () => {
     initExtension(mock.pi as any);
 
     // Initially no subagents
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Test",
       description: "desc",
       agentType: "general-purpose",
     });
-    let result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    let result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("Subagent execution is currently unavailable");
 
     // Reset task status
-    await mock.executeTool("TaskUpdate", { taskId: "1", status: "pending" });
+    await mock.executeTool("task_update", { taskId: "1", status: "pending" });
 
     // Late subagents extension broadcasts ready
     const rpc = installSubagentsMock(mock.pi);
 
-    result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("Launched 1 agent");
 
     rpc.unsub();
@@ -838,13 +838,13 @@ describe("RPC protocol correctness", () => {
     installSubagentsMock(mock.pi, { spawnError: "No active session" });
     initExtension(mock.pi as any);
 
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Err test",
       description: "desc",
       agentType: "general-purpose",
     });
 
-    const result = await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    const result = await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(result.content[0].text).toContain("No active session");
   });
 
@@ -854,18 +854,18 @@ describe("RPC protocol correctness", () => {
     initExtension(mock.pi as any);
 
     // Spawn a task so we have an agent to stop
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Stoppable",
       description: "desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(rpc.spawned).toHaveLength(1);
 
-    const result = await mock.executeTool("TaskStop", { task_id: "1" });
+    const result = await mock.executeTool("task_stop", { task_id: "1" });
     expect(result.content[0].text).toContain("stopped successfully and returned to pending");
     expect(rpc.stopped).toContain("agent-1");
-    const task = await mock.executeTool("TaskGet", { taskId: "1" });
+    const task = await mock.executeTool("task_get", { taskId: "1" });
     expect(task.content[0].text).toContain("Status: pending");
 
     rpc.unsub();
@@ -877,18 +877,18 @@ describe("RPC protocol correctness", () => {
     initExtension(mock.pi as any);
 
     // Create and execute a task, then simulate agent already gone
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Ghost",
       description: "desc",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
 
     // Clear spawned list so the mock's stop handler won't find the agent
     rpc.spawned.length = 0;
 
-    // TaskStop should still succeed (stopSubagent catches the error)
-    const result = await mock.executeTool("TaskStop", { task_id: "1" });
+    // task_stop should still succeed (stopSubagent catches the error)
+    const result = await mock.executeTool("task_stop", { task_id: "1" });
     expect(result.content[0].text).toContain("stopped successfully");
 
     rpc.unsub();
@@ -901,20 +901,20 @@ describe("RPC protocol correctness", () => {
     // Mark subagents as available via ready broadcast, but no stop handler installed
     mock.pi.events.emit("subagents:ready", {});
 
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Timeout stop",
       description: "desc",
       agentType: "general-purpose",
     });
     // Manually set task as in_progress with an agentId (no spawn handler)
-    await mock.executeTool("TaskUpdate", {
+    await mock.executeTool("task_update", {
       taskId: "1",
       status: "in_progress",
       metadata: { agentType: "general-purpose", agentId: "ghost-agent" },
     });
 
     vi.useFakeTimers();
-    const stopPromise = mock.executeTool("TaskStop", { task_id: "1" });
+    const stopPromise = mock.executeTool("task_stop", { task_id: "1" });
     await vi.advanceTimersByTimeAsync(11000);
 
     // Should resolve (not throw) — stopSubagent catches timeout
@@ -1132,19 +1132,19 @@ describe("Cascade data injection (buildTaskPrompt)", () => {
   });
 
   it("injects prerequisite result into cascaded agent prompt", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task A",
       description: "Produce a result",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task B",
       description: "Use Task A result",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
     expect(rpc.spawned).toHaveLength(1);
 
     mock.emitEvent("subagents:completed", { id: "agent-1", result: "The answer is 42" });
@@ -1158,19 +1158,19 @@ describe("Cascade data injection (buildTaskPrompt)", () => {
   });
 
   it("keeps full dependency context while truncating the prominent result summary", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task A",
       description: "Produce a long result",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task B",
       description: "Use truncated result",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
 
     const longResult = "x".repeat(5000);
     mock.emitEvent("subagents:completed", { id: "agent-1", result: longResult });
@@ -1184,19 +1184,19 @@ describe("Cascade data injection (buildTaskPrompt)", () => {
   });
 
   it("handles dependencies with no stored result gracefully", async () => {
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task A",
       description: "No result stored",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskCreate", {
+    await mock.executeTool("task_create", {
       subject: "Task B",
       description: "Works without A result",
       agentType: "general-purpose",
     });
-    await mock.executeTool("TaskUpdate", { taskId: "2", addBlockedBy: ["1"] });
+    await mock.executeTool("task_update", { taskId: "2", addBlockedBy: ["1"] });
 
-    await mock.executeTool("TaskExecute", { task_ids: ["1"] });
+    await mock.executeTool("task_execute", { task_ids: ["1"] });
 
     mock.emitEvent("subagents:completed", { id: "agent-1" });
 

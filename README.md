@@ -6,14 +6,14 @@ This is Leo's customized fork.
 
 ## Tools
 
-- `TaskCreate` — create a task
-- `TaskList` — list tracked work
-- `TaskGet` — inspect one task
-- `TaskUpdate` — update status, ownership, metadata, or dependencies
-- `TasksDone` — clear the list after every task is completed
-- `TaskOutput` — read background task output
-- `TaskStop` — stop background task execution
-- `TaskExecute` — run eligible tasks through the pi-subagents extension
+- `task_create` — create a task
+- `task_list` — list tracked work
+- `task_get` — inspect one task
+- `task_update` — update status, ownership, metadata, or dependencies
+- `tasks_done` — clear the list after every task is completed
+- `task_output` — read background task output
+- `task_stop` — stop background task execution
+- `task_execute` — run eligible tasks through the pi-subagents extension
 
 ## Development
 
@@ -38,4 +38,4 @@ pnpm build
 - A task is completed only after its acceptance criteria are verified.
 - Interrupted work stays open.
 - Required follow-up work is added to the list before progression.
-- `TasksDone` refuses cleanup while any task is pending or in progress.
+- `tasks_done` refuses cleanup while any task is pending or in progress.

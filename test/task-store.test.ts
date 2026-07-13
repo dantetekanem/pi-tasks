@@ -219,7 +219,7 @@ describe("TaskStore (in-memory)", () => {
     expect(store.list()).toHaveLength(0);
   });
 
-  it("creates tasks with metadata via TaskCreate", () => {
+  it("creates tasks with metadata via task_create", () => {
     const t = store.create("With meta", "Desc", undefined, { pr: "123", reviewer: "alice" });
     expect(t.metadata).toEqual({ pr: "123", reviewer: "alice" });
 
@@ -346,7 +346,7 @@ describe("TaskStore (in-memory)", () => {
     store.update("3", { status: "in_progress" });
 
     const tasks = store.list();
-    // Store returns by ID; TaskList tool sorts by status group
+    // Store returns by ID; task_list tool sorts by status group
     // Here we verify the raw list order (by ID), then test status-grouped sort
     const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, completed: 2 };
     const sorted = [...tasks].sort((a, b) => {

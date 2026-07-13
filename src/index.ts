@@ -2,14 +2,14 @@
  * pi-tasks — A pi extension providing strict task tracking and coordination.
  *
  * Tools:
- *   TaskCreate   — Create a structured task
- *   TaskList     — List all tasks with status
- *   TaskGet      — Get full task details
- *   TaskUpdate   — Update task fields, status, dependencies
- *   TasksDone    — Clear the fully completed task list
- *   TaskOutput   — Get output from a background task process
- *   TaskStop     — Stop a running background task process
- *   TaskExecute  — Execute tasks as subagents (requires @tintinweb/pi-subagents)
+ *   task_create   — Create a structured task
+ *   task_list     — List all tasks with status
+ *   task_get      — Get full task details
+ *   task_update   — Update task fields, status, dependencies
+ *   tasks_done    — Clear the fully completed task list
+ *   task_output   — Get output from a background task process
+ *   task_stop     — Stop a running background task process
+ *   task_execute  — Execute tasks as subagents (requires @tintinweb/pi-subagents)
  *
  * Commands:
  *   /tasks       — Interactive task management menu
@@ -80,15 +80,15 @@ function draftTaskKickoffPrompt(taskId: string, rawTask: string): string {
     rawTask,
     "",
     "Before doing the implementation:",
-    `1. Use TaskGet to read task #${taskId}.`,
-    "2. Improve the task by using TaskUpdate to replace the [draft] subject and draft description with a clearer task and acceptance criteria.",
+    `1. Use task_get to read task #${taskId}.`,
+    "2. Improve the task by using task_update to replace the [draft] subject and draft description with a clearer task and acceptance criteria.",
     `3. Mark task #${taskId} in_progress, then complete the work.`,
     `4. Mark task #${taskId} completed only when the work is fully done.`,
   ].join("\n");
 }
 
 /** Task tool names — used to detect task tool usage for reminder suppression. */
-const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TasksDone", "TaskOutput", "TaskStop", "TaskExecute"]);
+const TASK_TOOL_NAMES = new Set(["task_create", "task_list", "task_get", "task_update", "tasks_done", "task_output", "task_stop", "task_execute"]);
 
 /** How many turns without task tool usage before injecting a reminder. */
 const REMINDER_INTERVAL = 4;
@@ -96,7 +96,7 @@ const REMINDER_INTERVAL = 4;
 /** How many turns completed tasks linger before auto-clearing. */
 const AUTO_CLEAR_DELAY = 4;
 
-const TASK_COMPLETION_CONTRACT = `The active task list is a completion contract. Work in dependency and task-ID order. Do not start a later task while an earlier task is unfinished unless both were explicitly launched together as parallel work. Do not leave the current task to move ahead: either finish it completely with evidence, or keep it in_progress and continue it. When required work is discovered, create or update the task before moving on and place it in the correct dependency order; do not hide it in prose. Mark a task completed only after its full acceptance criteria and verification are satisfied. After every task is completed and verified, delete the completed task records so TaskList returns No tasks found.`;
+const TASK_COMPLETION_CONTRACT = `The active task list is a completion contract. Work in dependency and task-ID order. Do not start a later task while an earlier task is unfinished unless both were explicitly launched together as parallel work. Do not leave the current task to move ahead: either finish it completely with evidence, or keep it in_progress and continue it. When required work is discovered, create or update the task before moving on and place it in the correct dependency order; do not hide it in prose. Mark a task completed only after its full acceptance criteria and verification are satisfied. After every task is completed and verified, delete the completed task records so task_list returns No tasks found.`;
 
 const SYSTEM_REMINDER = `<system-reminder>
 There are unfinished tracked tasks. ${TASK_COMPLETION_CONTRACT}
@@ -145,7 +145,7 @@ export default function (pi: ExtensionAPI) {
   // ── Subagent integration state ──
   /** Latest ExtensionContext — refreshed on every tool execution so cascade always has a valid one. */
   let latestCtx: ExtensionContext | undefined;
-  /** Cascade config — set by TaskExecute, consumed by completion listener. */
+  /** Cascade config — set by task_execute, consumed by completion listener. */
   let cascadeConfig: { additionalContext?: string; model?: string; maxTurns?: number } | undefined;
   /** Maps agent IDs to task IDs for O(1) completion lookup. */
   const agentTaskMap = new Map<string, string>();
@@ -522,12 +522,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 1: TaskCreate
+  // Tool 1: task_create
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskCreate",
-    label: "TaskCreate",
+    name: "task_create",
+    label: "task_create",
     description: `Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
 It also helps the user understand the progress of the task and overall progress of their requests.
 
@@ -566,20 +566,20 @@ All tasks are created with status \`pending\`.
 
 - Create tasks with clear, specific subjects that describe the outcome
 - Include enough detail in the description for another agent to understand and complete the task
-- After creating tasks, use TaskUpdate to set up dependencies (blocks/blockedBy) if needed
-- Check TaskList first to avoid creating duplicate tasks
-- Include \`agentType\` (e.g., "general-purpose", "Explore") to mark tasks for subagent execution via TaskExecute`,
+- After creating tasks, use task_update to set up dependencies (blocks/blockedBy) if needed
+- Check task_list first to avoid creating duplicate tasks
+- Include \`agentType\` (e.g., "general-purpose", "Explore") to mark tasks for subagent execution via task_execute`,
     promptGuidelines: [
       TASK_COMPLETION_CONTRACT,
       "Capture every new user requirement or required follow-up as a task before moving on; append it after existing work or connect it with dependencies instead of silently replacing unfinished tasks.",
-      "Keep one top-level task in_progress unless TaskExecute explicitly launches a parallel batch.",
-      "Use TaskList after each material completion, continue the earliest unfinished task, and clean every completed record only after the whole list is verified complete.",
+      "Keep one top-level task in_progress unless task_execute explicitly launches a parallel batch.",
+      "Use task_list after each material completion, continue the earliest unfinished task, and clean every completed record only after the whole list is verified complete.",
     ],
     parameters: Type.Object({
       subject: Type.String({ description: "A brief title for the task" }),
       description: Type.String({ description: "A detailed description of what needs to be done" }),
       activeForm: Type.Optional(Type.String({ description: "Present continuous form shown in spinner when in_progress (e.g., 'Running tests')" })),
-      agentType: Type.Optional(Type.String({ description: "Agent type for subagent execution (e.g., 'general-purpose', 'Explore'). Tasks with agentType can be started via TaskExecute." })),
+      agentType: Type.Optional(Type.String({ description: "Agent type for subagent execution (e.g., 'general-purpose', 'Explore'). Tasks with agentType can be started via task_execute." })),
       metadata: Type.Optional(Type.Record(Type.String(), Type.Any(), { description: "Arbitrary metadata to attach to the task" })),
     }),
 
@@ -594,12 +594,12 @@ All tasks are created with status \`pending\`.
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 2: TaskList
+  // Tool 2: task_list
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskList",
-    label: "TaskList",
+    name: "task_list",
+    label: "task_list",
     description: `Use this tool to list all tasks in the task list.
 
 ## When to Use This Tool
@@ -613,13 +613,13 @@ All tasks are created with status \`pending\`.
 ## Output
 
 Returns a summary of each task:
-- **id**: Task identifier (use with TaskGet, TaskUpdate)
+- **id**: Task identifier (use with task_get, task_update)
 - **subject**: Brief description of the task
 - **status**: 'pending', 'in_progress', or 'completed'
 - **owner**: Agent ID if assigned, empty if available
 - **blockedBy**: List of open task IDs that must be resolved first (tasks with blockedBy cannot be claimed until dependencies resolve)
 
-Use TaskGet with a specific task ID to view full details including description and comments.`,
+Use task_get with a specific task ID to view full details including description and comments.`,
     parameters: Type.Object({}),
 
     execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
@@ -660,12 +660,12 @@ Use TaskGet with a specific task ID to view full details including description a
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 3: TaskGet
+  // Tool 3: task_get
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskGet",
-    label: "TaskGet",
+    name: "task_get",
+    label: "task_get",
     description: `Use this tool to retrieve a task by its ID from the task list.
 
 ## When to Use This Tool
@@ -686,7 +686,7 @@ Returns full task details:
 ## Tips
 
 - After fetching a task, verify its blockedBy list is empty before beginning work.
-- Use TaskList to see all tasks in summary form.`,
+- Use task_list to see all tasks in summary form.`,
     parameters: Type.Object({
       taskId: Type.String({ description: "The ID of the task to retrieve" }),
     }),
@@ -731,25 +731,25 @@ Returns full task details:
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 4: TaskUpdate
+  // Tool 4: task_update
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskUpdate",
-    label: "TaskUpdate",
+    name: "task_update",
+    label: "task_update",
     description: `Use this tool to update a task in the task list.
 
 ## When to Use This Tool
 
 **Before starting work on a task:**
 - Mark it in_progress BEFORE beginning — do not start work without updating status first
-- After resolving, call TaskList to find your next task
+- After resolving, call task_list to find your next task
 
 **Mark tasks as resolved:**
 - When you have completed the work described in a task
 - When a task is no longer needed or has been superseded
 - IMPORTANT: Always mark your assigned tasks as resolved when you finish them
-- After resolving, call TaskList to find your next task
+- After resolving, call task_list to find your next task
 
 - ONLY mark a task as completed when you have FULLY accomplished it
 - If you encounter errors, blockers, or cannot finish, keep the task as in_progress
@@ -787,7 +787,7 @@ Use \`deleted\` to permanently remove a task.
 
 ## Staleness
 
-Make sure to read a task's latest state using \`TaskGet\` before updating it.
+Make sure to read a task's latest state using \`task_get\` before updating it.
 
 ## Examples
 
@@ -837,7 +837,7 @@ Set up task dependencies:
         const earlier = unfinishedEarlierTasks(taskId);
         if (earlier.length > 0) {
           return Promise.resolve(textResult(
-            `Task #${taskId} cannot start while earlier tasks remain unfinished: ${earlier.map(task => `#${task.id} [${task.status}]`).join(", ")}. Finish them first or launch an explicit parallel batch with TaskExecute.`
+            `Task #${taskId} cannot start while earlier tasks remain unfinished: ${earlier.map(task => `#${task.id} [${task.status}]`).join(", ")}. Finish them first or launch an explicit parallel batch with task_execute.`
           ));
         }
       }
@@ -868,15 +868,15 @@ Set up task dependencies:
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 5: TasksDone
+  // Tool 5: tasks_done
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TasksDone",
-    label: "TasksDone",
+    name: "tasks_done",
+    label: "tasks_done",
     description: `Finish task-list cleanup in one tool call after all work is complete.
 
-Use this tool only after every tracked task is completed and verified. It removes all completed task records at once so TaskList returns \`No tasks found\`.
+Use this tool only after every tracked task is completed and verified. It removes all completed task records at once so task_list returns \`No tasks found\`.
 
 The tool refuses to clear the list while any task is pending or in_progress.`,
     parameters: Type.Object({}),
@@ -902,12 +902,12 @@ The tool refuses to clear the list while any task is pending or in_progress.`,
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 6: TaskOutput
+  // Tool 6: task_output
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskOutput",
-    label: "TaskOutput",
+    name: "task_output",
+    label: "task_output",
     description: `- Retrieves output from a running or completed task (background shell, agent, or remote session)
 - Takes a task_id parameter identifying the task
 - Returns the task output along with status information
@@ -978,12 +978,12 @@ The tool refuses to clear the list while any task is pending or in_progress.`,
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 7: TaskStop
+  // Tool 7: task_stop
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskStop",
-    label: "TaskStop",
+    name: "task_stop",
+    label: "task_stop",
     description: `
 - Stops a running background task by its ID
 - Takes a task_id parameter identifying the task to stop
@@ -1032,17 +1032,17 @@ The tool refuses to clear the list while any task is pending or in_progress.`,
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 8: TaskExecute
+  // Tool 8: task_execute
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
-    name: "TaskExecute",
-    label: "TaskExecute",
+    name: "task_execute",
+    label: "task_execute",
     description: `Execute one or more tasks as subagents.
 
 ## When to Use This Tool
 
-- To start execution of tasks that have \`agentType\` set (created via TaskCreate with agentType parameter)
+- To start execution of tasks that have \`agentType\` set (created via task_create with agentType parameter)
 - Tasks must be \`pending\` with all blockedBy dependencies \`completed\`
 - Each task runs as an independent background subagent
 
@@ -1053,7 +1053,7 @@ The tool refuses to clear the list while any task is pending or in_progress.`,
 - **model**: Model override for agents (e.g., "sonnet", "haiku")
 - **max_turns**: Maximum turns per agent`,
     promptGuidelines: [
-      "Never use the Agent tool for tasks launched via TaskExecute — agents are already running.",
+      "Never use the Agent tool for tasks launched via task_execute — agents are already running.",
     ],
     parameters: Type.Object({
       task_ids: Type.Array(Type.String(), { description: "Task IDs to execute as subagents" }),
@@ -1067,7 +1067,7 @@ The tool refuses to clear the list while any task is pending or in_progress.`,
         return textResult(
           "Subagent execution is currently unavailable (@tintinweb/pi-subagents not loaded " +
           "or version mismatch). You can run these as plain Agent-tool spawns, but pi-tasks " +
-          "won't track them — status stays pending, cascade won't fire, TaskOutput stays empty."
+          "won't track them — status stays pending, cascade won't fire, task_output stays empty."
         );
       }
 
@@ -1137,7 +1137,7 @@ The tool refuses to clear the list while any task is pending or in_progress.`,
       if (launched.length > 0) {
         lines.push(
           `Launched ${launched.length} agent(s):\n${launched.join("\n")}\n` +
-          `Use TaskOutput to check progress. Do not spawn additional agents for these tasks.`
+          `Use task_output to check progress. Do not spawn additional agents for these tasks.`
         );
       }
       if (results.length > 0) lines.push(`Skipped:\n${results.join("\n")}`);
