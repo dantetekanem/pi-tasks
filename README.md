@@ -14,14 +14,14 @@ https://github.com/user-attachments/assets/1d0ee87a-e0a5-4bfa-a9b9-2f9144cb905b
 
 ## Features
 
-- **7 LLM-callable tools** — `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`, `TaskOutput`, `TaskStop`, `TaskExecute` — matching Claude Code's exact tool specs and descriptions
+- **8 LLM-callable tools** — `TaskCreate`, `TaskList`, `TaskGet`, `TaskUpdate`, `TasksDone`, `TaskOutput`, `TaskStop`, `TaskExecute` — matching Claude Code's task workflow
 - **Persistent widget** — live task list above the editor with `✔`/`◼`/`◻` status icons, task numbers (`#1`, `#2`, …), strikethrough for completed tasks, star spinner (`✳✽`) for active tasks with elapsed time and token counts
 - **System-reminder injection** — periodic `<system-reminder>` nudges injected into the upcoming LLM request (via the `context` hook, transient and never persisted) when task tools haven't been used recently (matches Claude Code's behavior exactly)
 - **Strict completion contract** — the active list is treated as a spec: work proceeds in dependency/task-ID order, unfinished earlier tasks cannot be bypassed, and only an explicit `TaskExecute` batch permits parallel progression
 - **Full agent context** — `TaskExecute` sends the task's description, acceptance metadata, status, ownership, dependency edges, timestamps, and complete prerequisite task records to the subagent
 - **No false completion** — stopped subagents and background work return to `pending` with their partial result/error preserved instead of being marked complete
 - **Discovered-work capture** — prompt guidelines require newly discovered required work to be added or connected with dependencies before moving ahead
-- **Whole-list cleanup** — once every task is completed and verified, the contract requires completed records to be removed so `TaskList` returns `No tasks found`
+- **Whole-list cleanup** — once every task is completed and verified, `TasksDone` removes every completed record in one call so `TaskList` returns `No tasks found`
 - **Dependency management** — bidirectional `blocks`/`blockedBy` relationships with warnings for cycles, self-deps, and dangling references
 - **Shared task lists** — multiple pi sessions can share a file-backed task list for agent team coordination
 - **File locking** — concurrent access is safe when multiple sessions share a task list
@@ -145,6 +145,14 @@ Update task fields, status, metadata, and dependencies.
 Setting `status: "deleted"` permanently removes the task.
 
 Dependencies are bidirectional: `addBlocks: ["3"]` on task 1 also adds `blockedBy: ["1"]` to task 3.
+
+### `TasksDone`
+
+Clear the entire task list in one call after every task is completed and verified. The tool refuses to remove anything while a task is still pending or in progress.
+
+```
+→ Cleared 5 completed tasks. No tasks found
+```
 
 ### `TaskOutput`
 

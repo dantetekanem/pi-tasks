@@ -6,6 +6,7 @@
  *   TaskList     — List all tasks with status
  *   TaskGet      — Get full task details
  *   TaskUpdate   — Update task fields, status, dependencies
+ *   TasksDone    — Clear the fully completed task list
  *   TaskOutput   — Get output from a background task process
  *   TaskStop     — Stop a running background task process
  *   TaskExecute  — Execute tasks as subagents (requires @tintinweb/pi-subagents)
@@ -87,7 +88,7 @@ function draftTaskKickoffPrompt(taskId: string, rawTask: string): string {
 }
 
 /** Task tool names — used to detect task tool usage for reminder suppression. */
-const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskOutput", "TaskStop", "TaskExecute"]);
+const TASK_TOOL_NAMES = new Set(["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TasksDone", "TaskOutput", "TaskStop", "TaskExecute"]);
 
 /** How many turns without task tool usage before injecting a reminder. */
 const REMINDER_INTERVAL = 4;
@@ -867,7 +868,41 @@ Set up task dependencies:
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 5: TaskOutput
+  // Tool 5: TasksDone
+  // ──────────────────────────────────────────────────
+
+  pi.registerTool({
+    name: "TasksDone",
+    label: "TasksDone",
+    description: `Finish task-list cleanup in one tool call after all work is complete.
+
+Use this tool only after every tracked task is completed and verified. It removes all completed task records at once so TaskList returns \`No tasks found\`.
+
+The tool refuses to clear the list while any task is pending or in_progress.`,
+    parameters: Type.Object({}),
+
+    execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+      const tasks = store.list();
+      if (tasks.length === 0) {
+        return Promise.resolve(textResult("No tasks found"));
+      }
+
+      const unfinished = tasks.filter(task => task.status !== "completed");
+      if (unfinished.length > 0) {
+        return Promise.resolve(textResult(
+          `Cannot finish task cleanup while unfinished tasks remain: ${unfinished.map(task => `#${task.id} [${task.status}]`).join(", ")}. Complete and verify them first.`
+        ));
+      }
+
+      const count = store.clearCompleted();
+      autoClear.reset();
+      widget.update();
+      return Promise.resolve(textResult(`Cleared ${count} completed ${count === 1 ? "task" : "tasks"}. No tasks found`));
+    },
+  });
+
+  // ──────────────────────────────────────────────────
+  // Tool 6: TaskOutput
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
@@ -943,7 +978,7 @@ Set up task dependencies:
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 6: TaskStop
+  // Tool 7: TaskStop
   // ──────────────────────────────────────────────────
 
   pi.registerTool({
@@ -997,7 +1032,7 @@ Set up task dependencies:
   });
 
   // ──────────────────────────────────────────────────
-  // Tool 7: TaskExecute
+  // Tool 8: TaskExecute
   // ──────────────────────────────────────────────────
 
   pi.registerTool({

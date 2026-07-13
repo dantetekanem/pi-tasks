@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`TasksDone` bulk cleanup tool** — after every tracked task is completed and verified, agents can now remove the full completed list in one tool call instead of issuing one `TaskUpdate` deletion per task. The tool refuses to clear anything while pending or in-progress work remains.
+
 ## [0.7.1] - 2026-06-24
 
 ### Changed

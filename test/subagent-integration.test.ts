@@ -625,7 +625,7 @@ describe("Standalone operation (no subagents extension)", () => {
   });
 
   it("all core task tools are registered", () => {
-    for (const name of ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TaskExecute"]) {
+    for (const name of ["TaskCreate", "TaskList", "TaskGet", "TaskUpdate", "TasksDone", "TaskExecute"]) {
       expect(mock.tools.has(name)).toBe(true);
     }
   });
@@ -676,6 +676,33 @@ describe("Standalone operation (no subagents extension)", () => {
     expect(update.content[0].text).toContain("cannot start while earlier tasks remain unfinished");
     const task = await mock.executeTool("TaskGet", { taskId: "2" });
     expect(task.content[0].text).toContain("Status: pending");
+  });
+
+  it("TasksDone clears a fully completed list in one call", async () => {
+    await mock.executeTool("TaskCreate", { subject: "First", description: "desc" });
+    await mock.executeTool("TaskCreate", { subject: "Second", description: "desc" });
+    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+    await mock.executeTool("TaskUpdate", { taskId: "2", status: "completed" });
+
+    const done = await mock.executeTool("TasksDone", {});
+    expect(done.content[0].text).toContain("Cleared 2 completed tasks");
+
+    const list = await mock.executeTool("TaskList", {});
+    expect(list.content[0].text).toBe("No tasks found");
+  });
+
+  it("TasksDone refuses to clear unfinished tasks", async () => {
+    await mock.executeTool("TaskCreate", { subject: "Finished", description: "desc" });
+    await mock.executeTool("TaskCreate", { subject: "Still open", description: "desc" });
+    await mock.executeTool("TaskUpdate", { taskId: "1", status: "completed" });
+
+    const done = await mock.executeTool("TasksDone", {});
+    expect(done.content[0].text).toContain("unfinished tasks remain");
+    expect(done.content[0].text).toContain("#2 [pending]");
+
+    const list = await mock.executeTool("TaskList", {});
+    expect(list.content[0].text).toContain("#1 [completed]");
+    expect(list.content[0].text).toContain("#2 [pending]");
   });
 
   it("TaskExecute gracefully refuses without subagents", async () => {
