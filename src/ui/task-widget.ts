@@ -175,9 +175,17 @@ export class TaskWidget {
         task.status === "completed" ? visibleCompletedIds.has(task.id) : visibleUnfinishedIds.has(task.id)
       );
 
-    const hiddenCount = tasks.length - visible.length;
-    const overflowLine = hiddenCount > 0
-      ? truncate(theme.fg("dim", `    … and ${hiddenCount} more`))
+    const visibleIds = new Set(visible.map(task => task.id));
+    const hiddenTasks = tasks.filter(task => !visibleIds.has(task.id));
+    const hiddenParts: string[] = [];
+    const hiddenCompleted = hiddenTasks.filter(task => task.status === "completed").length;
+    const hiddenInProgress = hiddenTasks.filter(task => task.status === "in_progress").length;
+    const hiddenPending = hiddenTasks.filter(task => task.status === "pending").length;
+    if (hiddenCompleted > 0) hiddenParts.push(`${hiddenCompleted} done`);
+    if (hiddenInProgress > 0) hiddenParts.push(`${hiddenInProgress} in progress`);
+    if (hiddenPending > 0) hiddenParts.push(`${hiddenPending} open`);
+    const overflowLine = hiddenTasks.length > 0
+      ? truncate(theme.fg("dim", `    … ${hiddenTasks.length} hidden (${hiddenParts.join(", ")})`))
       : undefined;
 
     if (overflowLine && hiddenAt === "top") {

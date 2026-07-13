@@ -166,9 +166,9 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // header + 10 tasks + "… and 5 more"
+    // header + 10 tasks + status-aware overflow
     expect(lines).toHaveLength(12);
-    expect(lines[11]).toContain("5 more");
+    expect(lines[11]).toContain("5 hidden (5 open)");
   });
 
   it("respects maxVisible config", () => {
@@ -180,9 +180,9 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // header + 5 tasks + "… and 10 more"
+    // header + 5 tasks + status-aware overflow
     expect(lines).toHaveLength(7);
-    expect(lines[6]).toContain("10 more");
+    expect(lines[6]).toContain("10 hidden (10 open)");
   });
 
   it("caps completed tasks separately from the unfinished-task limit", () => {
@@ -196,12 +196,24 @@ describe("TaskWidget", () => {
     const lines = renderWidget(ui.state);
     // header + 3 newest completed + 8 unfinished + overflow
     expect(lines).toHaveLength(13);
-    expect(lines[12]).toContain("4 more");
+    expect(lines[12]).toContain("4 hidden (4 done)");
     expect(lines.some(l => l.includes("Done 4"))).toBe(false);
     expect(lines.some(l => l.includes("Done 5"))).toBe(true);
     expect(lines.some(l => l.includes("Done 7"))).toBe(true);
     expect(lines.some(l => l.includes("Future 1"))).toBe(true);
     expect(lines.some(l => l.includes("Future 8"))).toBe(true);
+  });
+
+  it("summarizes mixed hidden task statuses", () => {
+    widget = new TaskWidget(store, { maxVisible: 1 });
+    widget.setUICtx(ui.ctx);
+    for (let i = 1; i <= 5; i++) store.create(`Done ${i}`, "Desc");
+    for (let i = 1; i <= 3; i++) store.create(`Future ${i}`, "Desc");
+    for (let i = 1; i <= 5; i++) store.update(String(i), { status: "completed" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines[lines.length - 1]).toContain("4 hidden (2 done, 2 open)");
   });
 
   it("shows all tasks when limit exceeds task count", () => {
@@ -215,7 +227,7 @@ describe("TaskWidget", () => {
     const lines = renderWidget(ui.state);
     // header + 3 tasks, no overflow
     expect(lines).toHaveLength(4);
-    expect(lines[lines.length - 1]).not.toContain("more");
+    expect(lines[lines.length - 1]).not.toContain("hidden");
   });
 
   it("shows all tasks when showAll is true even with maxVisible set", () => {
@@ -229,7 +241,7 @@ describe("TaskWidget", () => {
     const lines = renderWidget(ui.state);
     // header + 15 tasks, no overflow line
     expect(lines).toHaveLength(16);
-    expect(lines[lines.length - 1]).not.toContain("more");
+    expect(lines[lines.length - 1]).not.toContain("hidden");
   });
 
   it("truncates from top when hiddenAt is 'top'", () => {
@@ -247,7 +259,7 @@ describe("TaskWidget", () => {
     // header + overflow line + 3 completed + 4 unfinished = 9 lines
     expect(lines).toHaveLength(9);
     // overflow at top (after header)
-    expect(lines[1]).toContain("1 more");
+    expect(lines[1]).toContain("1 hidden (1 done)");
     // all in_progress and pending visible without consuming completed-task slots
     expect(lines.some(l => l.includes("Working 1"))).toBe(true);
     expect(lines.some(l => l.includes("Todo 2"))).toBe(true);
@@ -269,7 +281,7 @@ describe("TaskWidget", () => {
     expect(lines).toHaveLength(5);
     expect(lines[1]).toContain("Task 1");
     expect(lines[3]).toContain("Task 3");
-    expect(lines[4]).toContain("2 more");
+    expect(lines[4]).toContain("2 hidden (2 open)");
     expect(lines.some(l => l.includes("Task 4"))).toBe(false);
   });
 
