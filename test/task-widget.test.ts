@@ -159,21 +159,7 @@ describe("TaskWidget", () => {
     expect(ui.state.widgets.get("tasks")?.content).toBeUndefined();
   });
 
-  it("limits visible tasks to MAX_VISIBLE_TASKS", () => {
-    for (let i = 0; i < 15; i++) {
-      store.create(`Task ${i + 1}`, "Desc");
-    }
-    widget.update();
-
-    const lines = renderWidget(ui.state);
-    // header + 10 tasks + status-aware overflow
-    expect(lines).toHaveLength(12);
-    expect(lines[11]).toContain("5 hidden (5 open)");
-  });
-
-  it("respects maxVisible config", () => {
-    widget = new TaskWidget(store, { maxVisible: 5 });
-    widget.setUICtx(ui.ctx);
+  it("limits the default widget to five visible tasks", () => {
     for (let i = 0; i < 15; i++) {
       store.create(`Task ${i + 1}`, "Desc");
     }
@@ -185,27 +171,70 @@ describe("TaskWidget", () => {
     expect(lines[6]).toContain("10 hidden (10 open)");
   });
 
-  it("caps completed tasks separately from the unfinished-task limit", () => {
+  it("respects maxVisible config as the total task limit", () => {
     widget = new TaskWidget(store, { maxVisible: 8 });
     widget.setUICtx(ui.ctx);
-    for (let i = 1; i <= 7; i++) store.create(`Done ${i}`, "Desc");
-    for (let i = 1; i <= 8; i++) store.create(`Future ${i}`, "Desc");
-    for (let i = 1; i <= 7; i++) store.update(String(i), { status: "completed" });
+    for (let i = 0; i < 15; i++) {
+      store.create(`Task ${i + 1}`, "Desc");
+    }
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // header + 3 newest completed + 8 unfinished + overflow
-    expect(lines).toHaveLength(13);
-    expect(lines[12]).toContain("4 hidden (4 done)");
-    expect(lines.some(l => l.includes("Done 4"))).toBe(false);
+    // header + 8 tasks + status-aware overflow
+    expect(lines).toHaveLength(10);
+    expect(lines[9]).toContain("7 hidden (7 open)");
+  });
+
+  it("shows up to two completed tasks, one current task, and the next pending tasks", () => {
+    for (let i = 1; i <= 4; i++) store.create(`Done ${i}`, "Desc");
+    store.create("Current", "Desc");
+    for (let i = 1; i <= 4; i++) store.create(`Future ${i}`, "Desc");
+    for (let i = 1; i <= 4; i++) store.update(String(i), { status: "completed" });
+    store.update("5", { status: "in_progress" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    // header + 2 newest completed + 1 current + 2 pending + overflow
+    expect(lines).toHaveLength(7);
+    expect(lines[1]).toContain("Done 3");
+    expect(lines[2]).toContain("Done 4");
+    expect(lines[3]).toContain("Current");
+    expect(lines[4]).toContain("Future 1");
+    expect(lines[5]).toContain("Future 2");
+    expect(lines[6]).toContain("4 hidden (2 done, 2 open)");
+  });
+
+  it("uses all five slots for current and pending tasks when none are completed", () => {
+    store.create("Current", "Desc");
+    for (let i = 1; i <= 6; i++) store.create(`Future ${i}`, "Desc");
+    store.update("1", { status: "in_progress" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    expect(lines).toHaveLength(7);
+    expect(lines[1]).toContain("Current");
+    expect(lines[5]).toContain("Future 4");
+    expect(lines[6]).toContain("2 hidden (2 open)");
+  });
+
+  it("uses a second completed slot when unfinished work leaves room", () => {
+    for (let i = 1; i <= 5; i++) store.create(`Done ${i}`, "Desc");
+    for (let i = 1; i <= 3; i++) store.create(`Future ${i}`, "Desc");
+    for (let i = 1; i <= 5; i++) store.update(String(i), { status: "completed" });
+    widget.update();
+
+    const lines = renderWidget(ui.state);
+    // header + 2 newest completed + 3 unfinished + overflow
+    expect(lines).toHaveLength(7);
+    expect(lines[6]).toContain("3 hidden (3 done)");
+    expect(lines.some(l => l.includes("Done 3"))).toBe(false);
+    expect(lines.some(l => l.includes("Done 4"))).toBe(true);
     expect(lines.some(l => l.includes("Done 5"))).toBe(true);
-    expect(lines.some(l => l.includes("Done 7"))).toBe(true);
-    expect(lines.some(l => l.includes("Future 1"))).toBe(true);
-    expect(lines.some(l => l.includes("Future 8"))).toBe(true);
+    expect(lines.some(l => l.includes("Future 3"))).toBe(true);
   });
 
   it("summarizes mixed hidden task statuses", () => {
-    widget = new TaskWidget(store, { maxVisible: 1 });
+    widget = new TaskWidget(store, { maxVisible: 3 });
     widget.setUICtx(ui.ctx);
     for (let i = 1; i <= 5; i++) store.create(`Done ${i}`, "Desc");
     for (let i = 1; i <= 3; i++) store.create(`Future ${i}`, "Desc");
@@ -213,7 +242,7 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    expect(lines[lines.length - 1]).toContain("4 hidden (2 done, 2 open)");
+    expect(lines[lines.length - 1]).toContain("5 hidden (3 done, 2 open)");
   });
 
   it("shows all tasks when limit exceeds task count", () => {
@@ -245,7 +274,7 @@ describe("TaskWidget", () => {
   });
 
   it("truncates from top when hiddenAt is 'top'", () => {
-    widget = new TaskWidget(store, { sortOrder: "status", hiddenAt: "top", showAll: false, maxVisible: 5 });
+    widget = new TaskWidget(store, { hiddenAt: "top", showAll: false, maxVisible: 5 });
     widget.setUICtx(ui.ctx);
     // 4 completed, 2 in_progress, 2 pending = 8 total, limit 5
     for (let i = 1; i <= 4; i++) store.create(`Done ${i}`, "Desc");
@@ -256,18 +285,18 @@ describe("TaskWidget", () => {
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // header + overflow line + 3 completed + 4 unfinished = 9 lines
-    expect(lines).toHaveLength(9);
+    // header + overflow line + 2 completed + 1 current + 2 pending = 7 lines
+    expect(lines).toHaveLength(7);
     // overflow at top (after header)
-    expect(lines[1]).toContain("1 hidden (1 done)");
-    // all in_progress and pending visible without consuming completed-task slots
-    expect(lines.some(l => l.includes("Working 1"))).toBe(true);
+    expect(lines[1]).toContain("3 hidden (2 done, 1 in progress)");
+    // hiddenAt=top keeps the later current task, but still shows only one
+    expect(lines.some(l => l.includes("Working 1"))).toBe(false);
+    expect(lines.some(l => l.includes("Working 2"))).toBe(true);
     expect(lines.some(l => l.includes("Todo 2"))).toBe(true);
-    // newest three completed tasks are visible
-    expect(lines.some(l => l.includes("Done 2"))).toBe(true);
+    // the newest two completed tasks are visible
+    expect(lines.some(l => l.includes("Done 2"))).toBe(false);
+    expect(lines.some(l => l.includes("Done 3"))).toBe(true);
     expect(lines.some(l => l.includes("Done 4"))).toBe(true);
-    // oldest completed task is hidden
-    expect(lines.some(l => l.includes("Done 1"))).toBe(false);
   });
 
   it("truncates from bottom by default", () => {
@@ -285,52 +314,23 @@ describe("TaskWidget", () => {
     expect(lines.some(l => l.includes("Task 4"))).toBe(false);
   });
 
-  it("sorts tasks by status when sortOrder is 'status'", () => {
-    widget = new TaskWidget(store, { sortOrder: "status" });
-    widget.setUICtx(ui.ctx);
-    store.create("Pending task", "Desc");           // #1
-    store.create("Completed task", "Desc");         // #2
-    store.create("In progress task", "Desc");       // #3
+  it("always groups completed, current, and pending tasks with ID order inside each group", () => {
+    store.create("Pending 1", "Desc");            // #1
+    store.create("Completed 2", "Desc");          // #2
+    store.create("Pending 3", "Desc");            // #3
+    store.create("Current 4", "Desc");            // #4
+    store.create("Completed 5", "Desc");          // #5
     store.update("2", { status: "completed" });
-    store.update("3", { status: "in_progress" });
+    store.update("4", { status: "in_progress" });
+    store.update("5", { status: "completed" });
     widget.update();
 
     const lines = renderWidget(ui.state);
-    // header + 3 tasks: completed, in_progress, pending
-    expect(lines[1]).toContain("Completed task");
-    expect(lines[2]).toContain("In progress task");
-    expect(lines[3]).toContain("Pending task");
-  });
-
-  it("defaults to ID order when sortOrder is unset", () => {
-    store.create("Pending task", "Desc");           // #1
-    store.create("Completed task", "Desc");         // #2
-    store.create("In progress task", "Desc");       // #3
-    store.update("2", { status: "completed" });
-    store.update("3", { status: "in_progress" });
-    widget.update();
-
-    const lines = renderWidget(ui.state);
-    expect(lines[1]).toContain("Pending task");
-    expect(lines[2]).toContain("Completed task");
-    expect(lines[3]).toContain("In progress task");
-  });
-
-  it("keeps ID order when sortOrder is 'id'", () => {
-    widget = new TaskWidget(store, { sortOrder: "id" });
-    widget.setUICtx(ui.ctx);
-    store.create("Pending task", "Desc");           // #1
-    store.create("Completed task", "Desc");         // #2
-    store.create("In progress task", "Desc");       // #3
-    store.update("2", { status: "completed" });
-    store.update("3", { status: "in_progress" });
-    widget.update();
-
-    const lines = renderWidget(ui.state);
-    // ID order: #1 pending, #2 completed, #3 in_progress
-    expect(lines[1]).toContain("Pending task");
-    expect(lines[2]).toContain("Completed task");
-    expect(lines[3]).toContain("In progress task");
+    expect(lines[1]).toContain("#2 Completed 2");
+    expect(lines[2]).toContain("#5 Completed 5");
+    expect(lines[3]).toContain("#4 Current 4");
+    expect(lines[4]).toContain("#1 Pending 1");
+    expect(lines[5]).toContain("#3 Pending 3");
   });
 
   it("tracks token usage for active tasks", () => {
@@ -378,7 +378,7 @@ describe("TaskWidget", () => {
     expect(lines[1]).toContain("~~#1 Task~~");
   });
 
-  it("supports multiple active tasks simultaneously", () => {
+  it("shows only one current task when multiple tasks are in progress", () => {
     store.create("Task A", "Desc", "Processing A");
     store.create("Task B", "Desc", "Processing B");
     store.update("1", { status: "in_progress" });
@@ -388,7 +388,8 @@ describe("TaskWidget", () => {
 
     const lines = renderWidget(ui.state);
     expect(lines[1]).toContain("Processing A…");
-    expect(lines[2]).toContain("Processing B…");
+    expect(lines.some(l => l.includes("Processing B…"))).toBe(false);
+    expect(lines[2]).toContain("1 hidden (1 in progress)");
   });
 
   it("distributes token usage across all active tasks", () => {
@@ -401,9 +402,14 @@ describe("TaskWidget", () => {
 
     widget.addTokenUsage(100, 50);
 
-    const lines = renderWidget(ui.state);
-    // Both tasks should have the same token counts
+    let lines = renderWidget(ui.state);
     expect(lines[1]).toContain("↑ 100");
+
+    // The hidden current task retained its metrics and shows them when it becomes current.
+    store.update("1", { status: "completed" });
+    widget.update();
+    lines = renderWidget(ui.state);
+    expect(lines[2]).toContain("B…");
     expect(lines[2]).toContain("↑ 100");
   });
 

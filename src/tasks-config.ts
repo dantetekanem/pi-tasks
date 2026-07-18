@@ -9,8 +9,7 @@ export interface TasksConfig {
   autoCascade?: boolean;   // default: false
   autoClearCompleted?: "never" | "on_list_complete" | "on_task_complete";  // default: "on_list_complete"
   showAll?: boolean;                     // default: false
-  maxVisible?: number;                   // default: 10
-  sortOrder?: "id" | "status" | "recent" | "oldest";  // default: "id"
+  maxVisible?: number;                   // default: 5
   hiddenAt?: "top" | "bottom";                         // default: "bottom"
 }
 

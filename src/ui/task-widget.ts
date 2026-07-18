@@ -17,11 +17,11 @@ import type { TasksConfig } from "../tasks-config.js";
 import type { Task } from "../types.js";
 
 function truncateFromTop(tasks: Task[], limit: number): Task[] {
-  return tasks.slice(-limit);
+  return limit > 0 ? tasks.slice(-limit) : [];
 }
 
 function truncateFromBottom(tasks: Task[], limit: number): Task[] {
-  return tasks.slice(0, limit);
+  return limit > 0 ? tasks.slice(0, limit) : [];
 }
 
 const TRUNCATE_FNS = { top: truncateFromTop, bottom: truncateFromBottom };
@@ -46,8 +46,8 @@ export type UICtx = {
 /** Star spinner frames for animated active task indicator (matches Claude Code). */
 const SPINNER = ["✳", "✴", "✵", "✶", "✷", "✸", "✹", "✺", "✻", "✼", "✽"];
 
-const DEFAULT_MAX_VISIBLE_TASKS = 10;
-const MAX_VISIBLE_COMPLETED_TASKS = 3;
+const DEFAULT_MAX_VISIBLE_TASKS = 5;
+const MAX_VISIBLE_COMPLETED_TASKS = 2;
 
 /** Per-task runtime metrics (elapsed time, token usage). */
 export interface TaskMetrics {
@@ -137,8 +137,7 @@ export class TaskWidget {
 
   /** Build widget lines from current live state. Called from the render callback. */
   private renderWidget(tui: any, theme: Theme): string[] {
-    const sortOrder = this.config.sortOrder ?? "id";
-    const tasks = this.store.list(sortOrder);
+    const tasks = this.store.list("status");
     const w = tui.terminal.columns;
     const truncate = (line: string) => truncateToWidth(line, w);
 
@@ -160,22 +159,21 @@ export class TaskWidget {
     const showAll = this.config.showAll ?? false;
     const limit = this.config.maxVisible ?? DEFAULT_MAX_VISIBLE_TASKS;
     const hiddenAt = this.config.hiddenAt ?? "bottom";
-    const unfinished = tasks.filter(task => task.status !== "completed");
-    const visibleUnfinished = showAll ? unfinished : TRUNCATE_FNS[hiddenAt](unfinished, limit);
-    const visibleCompletedIds = new Set(
-      [...completed]
-        .sort((a, b) => Number(b.id) - Number(a.id))
-        .slice(0, MAX_VISIBLE_COMPLETED_TASKS)
-        .map(task => task.id),
+    const visibleInProgress = showAll
+      ? inProgress
+      : TRUNCATE_FNS[hiddenAt](inProgress, Math.min(1, limit));
+    const completedLimit = Math.min(
+      MAX_VISIBLE_COMPLETED_TASKS,
+      Math.max(limit - visibleInProgress.length, 0),
     );
-    const visibleUnfinishedIds = new Set(visibleUnfinished.map(task => task.id));
-    const visible = showAll
-      ? tasks
-      : tasks.filter(task =>
-        task.status === "completed" ? visibleCompletedIds.has(task.id) : visibleUnfinishedIds.has(task.id)
-      );
+    const visibleCompleted = showAll ? completed : truncateFromTop(completed, completedLimit);
+    const pendingLimit = Math.max(limit - visibleInProgress.length - visibleCompleted.length, 0);
+    const visiblePending = showAll ? pending : TRUNCATE_FNS[hiddenAt](pending, pendingLimit);
+    const visibleIds = new Set(
+      [...visibleCompleted, ...visibleInProgress, ...visiblePending].map(task => task.id),
+    );
+    const visible = showAll ? tasks : tasks.filter(task => visibleIds.has(task.id));
 
-    const visibleIds = new Set(visible.map(task => task.id));
     const hiddenTasks = tasks.filter(task => !visibleIds.has(task.id));
     const hiddenParts: string[] = [];
     const hiddenCompleted = hiddenTasks.filter(task => task.status === "completed").length;

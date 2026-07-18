@@ -64,17 +64,8 @@ export async function openSettingsMenu(
         description:
           "Only applies when 'Show all tasks' is OFF. " +
           "Caps how many task lines the widget shows.",
-        currentValue: String(cfg.maxVisible ?? 10),
+        currentValue: String(cfg.maxVisible ?? 5),
         values: ["5", "10", "15", "20", "30", "50", "100"],
-      },
-      {
-        id: "sortOrder",
-        label: "Widget sort order",
-        description:
-          '"status" groups by completed → in-progress → pending. ' +
-          '"id" sorts by creation order.',
-        currentValue: cfg.sortOrder ?? "id",
-        values: ["id", "status", "recent", "oldest"],
       },
       {
         id: "hiddenAt",
@@ -121,10 +112,6 @@ export async function openSettingsMenu(
         }
         if (id === "maxVisible") {
           cfg.maxVisible = Number(newValue);
-          saveTasksConfig(cfg);
-        }
-        if (id === "sortOrder") {
-          cfg.sortOrder = newValue as TasksConfig["sortOrder"];
           saveTasksConfig(cfg);
         }
         if (id === "hiddenAt") {
